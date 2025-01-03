@@ -35,6 +35,21 @@
         html {
             font-size: 60%;
             overflow-x: hidden;
+            scroll-behavior: smooth;
+            scroll-behavior: cubic-bezier(0.42, 0, 0.58, 1);
+        }
+
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background-color: var(--mainColor);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background-color: var(--bgColor);
         }
 
         @keyframes cursor {
@@ -68,6 +83,10 @@
             right: -8px;
             animation: cursor 0.5s infinite, typing 25s steps(14) infinite;
         }
+
+        .test::before {
+            content: "";
+        }
     </style>
 </head>
 
@@ -78,10 +97,10 @@
         <div class="container mx-auto px-4 py-4 flex justify-end items-center">
             <!-- Navigation Menu -->
             <nav class="hidden md:flex space-x-8 ">
-                <a href="#"
+                <a href="#home"
                     class="text-[1.8rem] font-medium text-mainColor ml-16 ease-in-out duration-300 border-b-[3px] border-mainColor hover:text-mainColor hover:border-b-[3px] hover:border-mainColor">Home</a>
-                <a href="#"
-                    class="text-[1.8rem] font-medium text-textColor ml-16 ease-in-out duration-300 border-b-[3px] border-transparent hover:text-mainColor hover:border-b-[3px] hover:border-mainColor">About</a>
+                <a href="#education"
+                    class="test text-[1.8rem] font-medium text-textColor ml-16 ease-in-out duration-300 border-b-[3px] border-transparent before:content-[] before:w-full before:h-[3px] before:text-mainColor before:absolute before:border-b-4 before:border-mainColor  hover:text-mainColor hover:border-b-[3px] hover:border-mainColor">Education</a>
                 <a href="#"
                     class="text-[1.8rem] font-medium text-textColor ml-16 ease-in-out duration-300 border-b-[3px] border-transparent hover:text-mainColor hover:border-b-[3px] hover:border-mainColor">Services</a>
                 <a href="#"
@@ -99,14 +118,14 @@
 
         <!-- Mobile Dropdown Menu -->
         <div class="md:hidden bg-white shadow-lg hidden" id="mobileMenu">
-            <a href="#" class="block px-4 py-2 text-gray-600 hover:bg-blue-100 hover:text-blue-500">Home</a>
-            <a href="#" class="block px-4 py-2 text-gray-600 hover:bg-blue-100 hover:text-blue-500">About</a>
+            <a href="#home" class="block px-4 py-2 text-gray-600 hover:bg-blue-100 hover:text-blue-500">Home</a>
+            <a href="#education" class="block px-4 py-2 text-gray-600 hover:bg-blue-100 hover:text-blue-500">Education</a>
             <a href="#" class="block px-4 py-2 text-gray-600 hover:bg-blue-100 hover:text-blue-500">Services</a>
             <a href="#" class="block px-4 py-2 text-gray-600 hover:bg-blue-100 hover:text-blue-500">Contact</a>
         </div>
     </header>
 
-    <!-- Menu -->
+    <!-- Home Page -->
 
     <section class="min-h-screen pt-40 pb-40 px-[12%] flex items-center justify-center gap-60" id="home">
         <div class="home-content flex flex-col items-baseline text-left justify-center mt-12">
@@ -150,7 +169,76 @@
 
     </section>
 
+    <!-- Education Page -->
+
+    <section class="education p-[100px_15px] bg-secBgColor" id="education">
+        <h2 class="heading text-9xl text-center m-20 mb-20">Education</h2>
+        <div class="timeline-items max-w-[1200px] m-auto flex flex-wrap relative before:content-[''] before:absolute before:w-1 before:h-full before:bg-mainColor before:left-[calc(50%-1px)]">
+            <div class="timeline-item mb-10 w-full relative pr-[calc(50%+30px)] text-right">
+                <div class="timeline-dot h-5 w-5 bg-mainColor shadow-mainColor shadow-[0_0_25px,_0_0_50px] absolute left-[calc(50%-6px)] rounded-full top-[10px]"></div>
+                    <div class="timeline-date text-xl font-extrabold text-white m-[6px_0_15px]">2019</div>
+                    <div class="timeline-content bg-bgColor border-solid border-2 border-mainColor p-[30px_50px] rounded-[4rem] shadow-[0_0_10px] shadow-mainColor cursor-pointer transition-[0.3s] ease-in-out hover:shadow-[0_0_25px] hover:shadow-mainColor hover:scale-105">
+                        <h3 class="text-xl text-white m-[0_0_10px] font-medium">Secondary School</h3>
+
+                        <p class="text-white text-base font-light">Start with passion and learn programming. Choose HTML, CSS as the foundation to start with and have mastered the basics</p>
+                    </div>
+                
+            </div>
+            <div class="timeline-item mb-10 w-full relative pl-[calc(50%+30px)]">
+                <div class="timeline-dot h-5 w-5 bg-mainColor shadow-mainColor shadow-[0_0_25px,_0_0_50px] absolute left-[calc(50%-6px)] rounded-full top-[10px]"></div>
+                    <div class="timeline-date text-xl font-extrabold text-white m-[6px_0_15px]">2020</div>
+                    <div class="timeline-content bg-bgColor border-solid border-2 border-mainColor p-[30px_50px] rounded-[4rem] shadow-[0_0_10px] shadow-mainColor cursor-pointer transition-[0.3s] ease-in-out hover:shadow-[0_0_25px] hover:shadow-mainColor hover:scale-105">
+                        <h3 class="text-xl text-white m-[0_0_10px] font-medium">Secondary School</h3>
+
+                        <p class="text-white text-base font-light">Started learning and mastering the basics of PHP language, self-programmed some small projects (some tools running on Termux application). Trained in Pascal language and algorithms at school, achieved some achievements in algorithms when participating in algorithm competitions organized by the school and the city.</p>
+                    </div>
+                
+            </div>
+            <div class="timeline-item mb-10 w-full relative pr-[calc(50%+30px)] text-right">
+                <div class="timeline-dot h-5 w-5 bg-mainColor shadow-mainColor shadow-[0_0_25px,_0_0_50px] absolute left-[calc(50%-6px)] rounded-full top-[10px]"></div>
+                    <div class="timeline-date text-xl font-extrabold text-white m-[6px_0_15px]">2021</div>
+                    <div class="timeline-content bg-bgColor border-solid border-2 border-mainColor p-[30px_50px] rounded-[4rem] shadow-[0_0_10px] shadow-mainColor cursor-pointer transition-[0.3s] ease-in-out hover:shadow-[0_0_25px] hover:shadow-mainColor hover:scale-105">
+                        <h3 class="text-xl text-white m-[0_0_10px] font-medium">Secondary School</h3>
+
+                        <p class="text-white text-base font-light">Start learning deeply about JavaScript, NodeJS platform and create some small personal projects for yourself (create a chat bot on Messenger platform with plugins supporting chat bots).</p>
+                    </div>
+                
+            </div>
+            <div class="timeline-item mb-10 w-full relative pl-[calc(50%+30px)]">
+                <div class="timeline-dot h-5 w-5 bg-mainColor shadow-mainColor shadow-[0_0_25px,_0_0_50px] absolute left-[calc(50%-6px)] rounded-full top-[10px]"></div>
+                    <div class="timeline-date text-xl font-extrabold text-white m-[6px_0_15px]">2022</div>
+                    <div class="timeline-content bg-bgColor border-solid border-2 border-mainColor p-[30px_50px] rounded-[4rem] shadow-[0_0_10px] shadow-mainColor cursor-pointer transition-[0.3s] ease-in-out hover:shadow-[0_0_25px] hover:shadow-mainColor hover:scale-105">
+                        <h3 class="text-xl text-white m-[0_0_10px] font-medium">High School</h3>
+
+                        <p class="text-white text-base font-light">Started studying at a provincial gifted school specializing in IT. Trained in C++ language and learned in depth about algorithms.</p>
+                    </div>
+                
+            </div>
+            <div class="timeline-item mb-10 w-full relative pr-[calc(50%+30px)] text-right">
+                <div class="timeline-dot h-5 w-5 bg-mainColor shadow-mainColor shadow-[0_0_25px,_0_0_50px] absolute left-[calc(50%-6px)] rounded-full top-[10px]"></div>
+                    <div class="timeline-date text-xl font-extrabold text-white m-[6px_0_15px]">2023</div>
+                    <div class="timeline-content bg-bgColor border-solid border-2 border-mainColor p-[30px_50px] rounded-[4rem] shadow-[0_0_10px] shadow-mainColor cursor-pointer transition-[0.3s] ease-in-out hover:shadow-[0_0_25px] hover:shadow-mainColor hover:scale-105">
+                        <h3 class="text-xl text-white m-[0_0_10px] font-medium">High School</h3>
+
+                        <p class="text-white text-base font-light">Start participating in algorithm competitions and achieve some achievements.</p>
+                    </div>
+                
+            </div>
+            <div class="timeline-item mb-0 w-full relative pl-[calc(50%+30px)]">
+                <div class="timeline-dot h-5 w-5 bg-mainColor shadow-mainColor shadow-[0_0_25px,_0_0_50px] absolute left-[calc(50%-6px)] rounded-full top-[10px]"></div>
+                    <div class="timeline-date text-xl font-extrabold text-white m-[6px_0_15px]">2024</div>
+                    <div class="timeline-content bg-bgColor border-solid border-2 border-mainColor p-[30px_50px] rounded-[4rem] shadow-[0_0_10px] shadow-mainColor cursor-pointer transition-[0.3s] ease-in-out hover:shadow-[0_0_25px] hover:shadow-mainColor hover:scale-105">
+                        <h3 class="text-xl text-white m-[0_0_10px] font-medium">University</h3>
+
+                        <p class="text-white text-base font-light">Directly admitted to Ho Chi Minh City University of Transport with major in Data Science and AI. Started learning about Python and Data Science.</p>
+                    </div>
+                
+            </div>
+        </div>
+    </section>
+
     <script>
+        // Mobile menu button
         const menuButton = document.getElementById('menuButton');
         const mobileMenu = document.getElementById('mobileMenu');
 
@@ -158,11 +246,12 @@
             mobileMenu.classList.toggle('hidden');
         });
 
+        // Dynamic text
         const words = [
             "Full-stack Developer",
             "Data Scientist",
             "Software Developer",
-            "Student"
+            "College Student"
         ];
 
         let index = 1;
