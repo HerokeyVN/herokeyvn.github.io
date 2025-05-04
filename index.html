@@ -153,16 +153,16 @@
         </div>
 
         <!-- Mobile Dropdown Menu -->
-        <div class="md:hidden bg-bgColor border border-mainColor shadow-lg hidden absolute top-full right-0 left-0 z-50"
+        <div class="md:hidden bg-bgColor border-t border-mainColor shadow-lg absolute top-full right-0 left-0 z-50 max-h-0 overflow-hidden opacity-0 transition-all duration-500 ease-in-out"
             id="mobileMenu">
             <a href="#home"
-                class="block px-6 py-4 text-[1.6rem] text-textColor hover:bg-secBgColor hover:text-mainColor border-b border-gray-800">Home</a>
+                class="block px-8 py-6 text-[2rem] text-textColor hover:bg-secBgColor hover:text-mainColor border-b border-gray-800 opacity-0 -translate-y-3 transition-all duration-300 ease-out delay-[250ms]">Home</a>
             <a href="#education"
-                class="block px-6 py-4 text-[1.6rem] text-textColor hover:bg-secBgColor hover:text-mainColor border-b border-gray-800">Education</a>
+                class="block px-8 py-6 text-[2rem] text-textColor hover:bg-secBgColor hover:text-mainColor border-b border-gray-800 opacity-0 -translate-y-3 transition-all duration-300 ease-out delay-[300ms]">Education</a>
             <a href="#technology"
-                class="block px-6 py-4 text-[1.6rem] text-textColor hover:bg-secBgColor hover:text-mainColor border-b border-gray-800">Technology</a>
+                class="block px-8 py-6 text-[2rem] text-textColor hover:bg-secBgColor hover:text-mainColor border-b border-gray-800 opacity-0 -translate-y-3 transition-all duration-300 ease-out delay-[350ms]">Technology</a>
             <a href="#contact"
-                class="block px-6 py-4 text-[1.6rem] text-textColor hover:bg-secBgColor hover:text-mainColor">Contact</a>
+                class="block px-8 py-6 text-[2rem] text-textColor hover:bg-secBgColor hover:text-mainColor opacity-0 -translate-y-3 transition-all duration-300 ease-out delay-[400ms]">Contact</a>
         </div>
     </header>
 
@@ -673,9 +673,47 @@
         // Mobile menu button
         const menuButton = document.getElementById('menuButton');
         const mobileMenu = document.getElementById('mobileMenu');
+        const mobileLinks = mobileMenu.querySelectorAll('a');
+
+        // Function to open the menu
+        function openMenu() {
+            mobileMenu.classList.remove('max-h-0', 'opacity-0');
+            mobileMenu.classList.add('max-h-[500px]', 'opacity-100', 'pt-4', 'pb-4'); // Adjust max-h if needed
+            mobileLinks.forEach(link => {
+                link.classList.remove('opacity-0', '-translate-y-3');
+                link.classList.add('opacity-100', 'translate-y-0');
+            });
+        }
+
+        // Function to close the menu
+        function closeMenu() {
+            mobileMenu.classList.remove('max-h-[500px]', 'opacity-100', 'pt-4', 'pb-4');
+            mobileMenu.classList.add('max-h-0', 'opacity-0');
+            // Reset link styles after the menu collapse transition finishes
+            setTimeout(() => {
+                // Check if menu is still closed before resetting (prevents issues with rapid clicks)
+                if (!mobileMenu.classList.contains('opacity-100')) {
+                    mobileLinks.forEach(link => {
+                        link.classList.remove('opacity-100', 'translate-y-0');
+                        link.classList.add('opacity-0', '-translate-y-3');
+                    });
+                }
+            }, 500); // Match the duration of the mobileMenu transition
+        }
 
         menuButton.addEventListener('click', () => {
-            mobileMenu.classList.toggle('hidden');
+            if (mobileMenu.classList.contains('opacity-100')) {
+                closeMenu();
+            } else {
+                openMenu();
+            }
+        });
+
+        // Close mobile menu when a link is clicked
+        mobileLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                closeMenu();
+            });
         });
 
         // Dynamic text
