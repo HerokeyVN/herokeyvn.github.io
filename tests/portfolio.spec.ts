@@ -136,3 +136,88 @@ test("keeps the site thread outside protected content", async ({ page }) => {
 
   expect(collisions).toEqual([]);
 });
+
+test("maintains geometric continuity between all consecutive thread segments with no gaps", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")]
+      .every((path) => path.getTotalLength() > 0),
+  );
+
+  const continuity = await page.evaluate(() => {
+    const paths = [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")];
+    const errors: { index: number; dist: number }[] = [];
+
+    for (let i = 0; i < paths.length - 1; i++) {
+      const p1 = paths[i]!;
+      const p2 = paths[i + 1]!;
+      const endPoint = p1.getPointAtLength(p1.getTotalLength());
+      const startPoint = p2.getPointAtLength(0);
+      const dist = Math.hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y);
+      if (dist > 0.5) {
+        errors.push({ index: i, dist });
+      }
+    }
+
+    return {
+      errors,
+      segmentCount: paths.length,
+      totalLength: paths.reduce((sum, p) => sum + p.getTotalLength(), 0),
+    };
+  });
+
+  expect(continuity.segmentCount).toBe(5);
+  expect(continuity.errors).toEqual([]);
+  expect(continuity.totalLength).toBeGreaterThan(3000);
+});
+
+test("synchronizes thread drawing immediately with scroll position and reverses cleanly", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")]
+      .every((path) => path.getTotalLength() > 0),
+  );
+
+  // Helper to read visible lengths of all segments
+  const getVisibleLengths = async () => {
+    return page.evaluate(() => {
+      const paths = [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")];
+      return paths.map((p) => {
+        const total = p.getTotalLength();
+        const offset = parseFloat(p.style.strokeDashoffset || "0");
+        return Math.max(0, Math.round(total - offset));
+      });
+    });
+  };
+
+  // At top of page: site thread is not yet drawn
+  const initial = await getVisibleLengths();
+  expect(initial[0]).toBe(0);
+
+  // Scroll down to #experience
+  await page.locator("#experience").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(50);
+  const atExp = await getVisibleLengths();
+  // Segment 0 (About) must be substantially or fully revealed
+  expect(atExp[0]).toBeGreaterThan(500);
+
+  // Rapid scroll down to #projects
+  await page.locator("#projects").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(50);
+  const atProj = await getVisibleLengths();
+  // Segment 1 (Experience) must be revealed
+  expect(atProj[1]).toBeGreaterThan(300);
+
+  // Rapid scroll back to #about: thread immediately retracts
+  await page.locator("#about").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(50);
+  const backAtAbout = await getVisibleLengths();
+  expect(backAtAbout[2]).toBe(0); // Projects retracted
+  expect(backAtAbout[1]).toBe(0); // Experience retracted
+
+  // Scroll back to top: site thread completely retracted
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await page.waitForTimeout(50);
+  const backAtTop = await getVisibleLengths();
+  expect(backAtTop.every((len) => len === 0)).toBe(true);
+});

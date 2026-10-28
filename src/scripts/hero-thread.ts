@@ -35,7 +35,8 @@ export function initHeroThread() {
       let scrollProgress = 0;
 
       const render = () => {
-        let remaining = totalLength * Math.max(entrance.progress, 0.34 + scrollProgress * 0.66);
+        const effectiveProgress = Math.min(1, Math.max(entrance.progress, 0.35 + scrollProgress * 0.65));
+        let remaining = totalLength * effectiveProgress;
         segments.forEach(({ element, length }) => {
           const visible = Math.max(0, Math.min(length, remaining));
           gsap.set(element, {
@@ -48,21 +49,45 @@ export function initHeroThread() {
       };
 
       render();
-      const entranceTween = gsap.to(entrance, { progress: 0.34, duration: 1.45, delay: 0.45, ease: "power2.inOut", onUpdate: render });
+      const entranceTween = gsap.to(entrance, {
+        progress: 0.35,
+        duration: 1.2,
+        delay: 0.3,
+        ease: "power2.out",
+        onUpdate: render,
+      });
+
+      const heroExitScroll = () => Math.round(hero.offsetHeight * 0.55);
+
       const trigger = ScrollTrigger.create({
         trigger: hero,
         start: "top top",
-        end: "bottom top",
-        scrub: 0.45,
+        end: () => `${heroExitScroll()} top`,
+        scrub: true,
         onUpdate: (self) => {
+          if (self.progress > 0 && entranceTween.isActive()) {
+            entrance.progress = Math.max(entrance.progress, 0.35);
+          }
           scrollProgress = self.progress;
           render();
         },
       });
 
+      const onScroll = () => {
+        if (window.scrollY > 0 && entranceTween.isActive()) {
+          entrance.progress = Math.max(entrance.progress, 0.35);
+        }
+        const maxScroll = heroExitScroll();
+        scrollProgress = Math.min(1, Math.max(0, window.scrollY / maxScroll));
+        render();
+      };
+
+      window.addEventListener("scroll", onScroll, { passive: true });
+
       return () => {
         entranceTween.kill();
         trigger.kill();
+        window.removeEventListener("scroll", onScroll);
       };
     },
   );
