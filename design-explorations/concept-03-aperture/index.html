@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
+  <title>Concept 03 — Spatial Aperture</title>
+  <style>
+    @font-face{font-family:Syne;src:url("../../node_modules/@fontsource/syne/files/syne-latin-700-normal.woff2") format("woff2");font-weight:700;font-display:swap}
+    @font-face{font-family:Space;src:url("../../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-400-normal.woff2") format("woff2");font-weight:400;font-display:swap}
+    @font-face{font-family:Plex;src:url("../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2") format("woff2");font-display:swap}
+    :root{--black:#030305;--ivory:#efede6;--red:#ff3c1a;--violet:#171524;--pad:clamp(20px,3vw,44px)}
+    *{box-sizing:border-box}html,body{margin:0;background:var(--black);color:var(--ivory)}body{font-family:Space,Arial,sans-serif;overflow-x:hidden}a{color:inherit;text-decoration:none}
+    .hero{height:100svh;min-height:700px;position:relative;overflow:hidden;isolation:isolate;background:radial-gradient(circle at 50% 47%,#15131d 0,#08080c 25%,#030305 61%)}
+    .nav{position:absolute;z-index:20;top:0;left:0;right:0;padding:28px var(--pad);display:flex;justify-content:space-between;align-items:center;font:10px/1 Plex,monospace;letter-spacing:.12em;text-transform:uppercase}.nav strong{font:700 17px/1 Syne,sans-serif;letter-spacing:.03em}.nav span{display:flex;gap:30px;color:#aaa7a0}
+    .coordinates{position:absolute;z-index:15;left:var(--pad);right:var(--pad);top:50%;display:flex;justify-content:space-between;color:#706d73;font:9px/1 Plex,monospace;letter-spacing:.12em;text-transform:uppercase}
+    .aperture{position:absolute;z-index:2;left:50%;top:46%;width:min(36vw,500px);aspect-ratio:1;transform:translate(-50%,-50%);border:1px solid #efede62b;border-radius:50%;box-shadow:0 0 0 5vw #ffffff04,0 0 0 11vw #ffffff025,0 0 130px #6d5aff15}.aperture:before,.aperture:after{content:"";position:absolute;inset:12%;border:1px solid #efede618;border-radius:50%}.aperture:after{inset:35%;border-color:#ff3c1a4a;box-shadow:0 0 28px #ff3c1a20}.aperture__axis{position:absolute;inset:50% auto auto 50%;width:145%;height:1px;background:linear-gradient(90deg,transparent,#efede62b,transparent);transform:translate(-50%,-50%)}
+    .identity{position:absolute;z-index:5;left:var(--pad);right:var(--pad);top:46%;transform:translateY(-50%);display:grid;grid-template-columns:1fr 1fr;align-items:center;font:700 clamp(98px,12.4vw,178px)/.8 Syne,sans-serif;letter-spacing:-.085em;text-transform:uppercase;white-space:nowrap}.identity__left{text-align:left}.identity__right{text-align:right}.identity .outline{color:transparent;-webkit-text-stroke:1.4px var(--ivory)}
+    .role{position:absolute;z-index:12;left:var(--pad);bottom:32px;display:flex;align-items:end;gap:26px}.role h1{margin:0;font:700 clamp(36px,4.5vw,65px)/.88 Syne,sans-serif;letter-spacing:-.055em;text-transform:uppercase}.role p{margin:0 0 3px;max-width:34ch;color:#b0ada7;font:11px/1.6 Plex,monospace}.scroll{position:absolute;z-index:12;right:var(--pad);bottom:38px;font:10px/1 Plex,monospace;letter-spacing:.12em;text-transform:uppercase}.scroll b{color:var(--red);font-weight:400}
+    .stage-label{position:absolute;z-index:4;top:calc(46% + min(20vw,275px));left:50%;transform:translateX(-50%);color:#77747b;font:9px/1 Plex,monospace;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+    .thread{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.thread.back{z-index:3}.thread.front{z-index:8}.thread path{fill:none;stroke:var(--red);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}.thread circle{fill:var(--red)}.mobile-thread{display:none}
+    .about{min-height:100svh;position:relative;padding:130px var(--pad) 80px;overflow:hidden;background:radial-gradient(circle at 50% 0,#252039 0,#121119 36%,#08080c 76%)}.about__orbit{position:absolute;left:50%;top:-210px;width:660px;height:660px;transform:translateX(-50%);border:1px solid #efede616;border-radius:50%;box-shadow:0 0 0 90px #ffffff018,0 0 0 180px #ffffff012}.about__kicker{position:relative;z-index:3;text-align:center;font:9px/1 Plex,monospace;letter-spacing:.14em;text-transform:uppercase;color:#9b98a0}.about h2{position:relative;z-index:3;max-width:1180px;margin:22vh auto 90px;text-align:center;font:700 clamp(66px,9vw,130px)/.84 Syne,sans-serif;letter-spacing:-.07em;text-transform:uppercase}.about h2 span{display:block}.about h2 .quiet{color:transparent;-webkit-text-stroke:1px #efede68c}.about__copy{position:relative;z-index:3;display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:6vw;padding-top:25px;border-top:1px solid #efede62b}.about__copy p{margin:0;max-width:40ch;font-size:17px;line-height:1.55}.about__copy small{font:9px/1.7 Plex,monospace;text-transform:uppercase;color:#9b98a0}.about__copy .center{width:7px;height:7px;margin-top:8px;background:var(--red);border-radius:50%}.about-thread{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.about-thread path{fill:none;stroke:var(--red);stroke-width:2;vector-effect:non-scaling-stroke}
+    @media(max-width:600px){
+      :root{--pad:18px}.hero{min-height:680px}.nav{padding-top:22px}.nav span a:not(:last-child){display:none}.coordinates{top:42%}.coordinates span:last-child{display:none}
+      .aperture{top:39%;width:68vw}.identity{top:39%;display:flex;flex-direction:column;align-items:stretch;font-size:23vw;line-height:.75}.identity__left{text-align:left}.identity__right{text-align:right;margin-top:16vw}.stage-label{top:calc(39% + 39vw);font-size:7px}
+      .role{left:var(--pad);right:var(--pad);bottom:24px;display:block}.role h1{font-size:10.5vw}.role p{margin-top:12px;font-size:9px;max-width:30ch}.scroll{right:var(--pad);bottom:26px;font-size:8px}.desktop-thread{display:none}.mobile-thread{display:block}
+      .about{padding-top:95px}.about__orbit{top:-110px;width:360px;height:360px}.about h2{margin:22vh 0 80px;font-size:15.8vw}.about__copy{grid-template-columns:1fr;gap:26px}.about__copy .center{display:none}.about__copy p{font-size:15px}
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero" aria-labelledby="c3-title">
+      <nav class="nav"><strong>HEROKEYVN</strong><span><a href="#about">Profile</a><a href="#">Projects</a><a href="mailto:herokey2018@gmail.com">Connect ↗</a></span></nav>
+      <div class="coordinates"><span>03 / Spatial systems study</span><span>Node.js · TypeScript · Identity</span></div>
+      <div class="aperture" aria-label="Reserved aperture for a future 3D service topology"><span class="aperture__axis"></span></div>
+      <div class="stage-label">Future 3D volume / fixed visual gravity</div>
+      <svg class="thread back desktop-thread" viewBox="0 0 1440 900" aria-hidden="true"><path d="M720 0 C714 96 675 132 682 204 C690 278 764 286 742 354 C723 414 632 408 610 474"/><path d="M648 510 C702 546 752 503 795 532 C837 560 818 614 857 642 C899 671 948 630 994 651 C1037 670 1031 731 1067 765 C1100 796 1129 804 1138 900"/></svg>
+      <svg class="thread front desktop-thread" viewBox="0 0 1440 900" aria-hidden="true"><path d="M610 474 C612 496 627 501 648 510"/></svg>
+      <svg class="thread back mobile-thread" viewBox="0 0 390 844" aria-hidden="true"><path d="M195 0 C194 74 156 104 169 164 C181 218 235 226 222 278 C210 325 148 326 146 378"/><path d="M172 398 C210 423 234 392 264 416 C293 440 268 486 297 510 C320 529 345 521 368 551 C384 574 370 623 383 662"/></svg>
+      <svg class="thread front mobile-thread" viewBox="0 0 390 844" aria-hidden="true"><path d="M146 378 C151 390 159 393 172 398"/></svg>
+      <div class="identity" aria-hidden="true"><div class="identity__left">HER<span class="outline">O</span></div><div class="identity__right"><span class="outline">K</span>EYVN</div></div>
+      <div class="role"><h1 id="c3-title">Backend<br>Developer</h1><p>HerokeyVN builds the services behind digital products—identity, APIs, and practical system architecture.</p></div>
+      <a class="scroll" href="#about">Enter the system <b>↓</b></a>
+    </section>
+    <section class="about" id="about">
+      <div class="about__orbit"></div>
+      <svg class="about-thread" viewBox="0 0 1440 900" preserveAspectRatio="none" aria-hidden="true"><path d="M1138 0 C1108 86 1041 110 995 173 C951 232 1000 284 954 344 C916 394 815 387 765 449 C724 500 748 555 720 616"/></svg>
+      <div class="about__kicker">01 / The work behind the surface</div>
+      <h2><span>Built for the parts</span><span class="quiet">users don't see.</span></h2>
+      <div class="about__copy"><p>Backend work is spatial: services have distance, dependency, pressure, and flow. The composition makes that invisible structure legible.</p><span class="center"></span><small>3D integration strategy<br>One topology sculpture occupies the aperture. Type and thread retain their positions and depth.</small></div>
+    </section>
+  </main>
+</body>
+</html>

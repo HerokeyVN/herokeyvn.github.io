@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
+  <title>Concept 01 — Typographic Monolith</title>
+  <style>
+    @font-face{font-family:Syne;src:url("../../node_modules/@fontsource/syne/files/syne-latin-800-normal.woff2") format("woff2");font-weight:800;font-display:swap}
+    @font-face{font-family:Space;src:url("../../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-500-normal.woff2") format("woff2");font-weight:500;font-display:swap}
+    @font-face{font-family:Plex;src:url("../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2") format("woff2");font-weight:400;font-display:swap}
+    :root{--black:#070707;--ivory:#f2efe7;--red:#ff3b18;--muted:#9d9a93;--pad:clamp(20px,3.2vw,48px)}
+    *{box-sizing:border-box}html,body{margin:0;background:var(--black);color:var(--ivory)}body{font-family:Space,Arial,sans-serif;overflow-x:hidden}a{color:inherit;text-decoration:none}
+    .hero{position:relative;height:100svh;min-height:700px;overflow:hidden;isolation:isolate;background:var(--black)}
+    .nav{position:absolute;z-index:20;top:0;left:0;right:0;padding:28px var(--pad);display:flex;justify-content:space-between;align-items:center;font:12px/1 Plex,monospace;letter-spacing:.1em;text-transform:uppercase}.nav strong{font:800 20px/1 Syne,sans-serif;letter-spacing:-.06em}.nav__links{display:flex;gap:34px;color:#c9c5bc}
+    .axis{position:absolute;top:86px;left:var(--pad);right:var(--pad);display:flex;justify-content:space-between;padding-top:13px;border-top:1px solid #ffffff24;color:var(--muted);font:10px/1 Plex,monospace;letter-spacing:.12em;text-transform:uppercase}
+    .monolith{position:absolute;z-index:5;left:var(--pad);right:var(--pad);top:50%;transform:translateY(-49%);font:800 clamp(100px,17.3vw,248px)/.68 Syne,sans-serif;letter-spacing:-.095em;text-transform:uppercase}
+    .monolith__row{display:flex;width:100%;white-space:nowrap}.monolith__row:first-child{justify-content:flex-start}.monolith__row:nth-child(2){justify-content:flex-end;padding-right:2.5vw}.glyph{position:relative;display:inline-block}.counter-stage{position:absolute;z-index:1;left:21.4%;top:30.8%;width:10.5vw;aspect-ratio:1;border:1px solid #f2efe72c;border-radius:50%;box-shadow:0 0 0 16px #ffffff08,0 0 90px #ff3b180d}.counter-stage:before,.counter-stage:after{content:"";position:absolute;inset:50% auto auto 50%;background:#f2efe74a;transform:translate(-50%,-50%)}.counter-stage:before{width:150%;height:1px}.counter-stage:after{height:150%;width:1px}
+    .role{position:absolute;z-index:8;left:var(--pad);right:var(--pad);bottom:30px;padding-top:18px;border-top:1px solid #ffffff24;display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:30px}.role h1{margin:0;font:500 18px/1.15 Space,sans-serif;letter-spacing:-.03em}.role h1 span{color:var(--red)}.role p{margin:0;max-width:39ch;color:#b8b5ae;font:12px/1.55 Plex,monospace}.role a{font:10px/1 Plex,monospace;letter-spacing:.12em;text-transform:uppercase}.role a i{color:var(--red);font-style:normal}
+    .thread{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.thread.back{z-index:3}.thread.front{z-index:7}.thread path{fill:none;stroke:var(--red);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}.thread .node{fill:var(--red)}
+    .about{position:relative;min-height:100svh;background:var(--ivory);color:#10100f;padding:clamp(100px,14vw,200px) var(--pad) 80px;overflow:hidden}.about__index{font:10px/1 Plex,monospace;letter-spacing:.12em;text-transform:uppercase}.about h2{position:relative;z-index:2;max-width:1120px;margin:13vh 0 80px;font:800 clamp(64px,9.6vw,138px)/.82 Syne,sans-serif;letter-spacing:-.075em;text-transform:uppercase}.about h2 em{font-style:normal;color:transparent;-webkit-text-stroke:1.5px #10100f}.about__foot{display:grid;grid-template-columns:1fr 1fr;gap:8vw;padding-top:24px;border-top:1px solid #10100f38}.about__foot p{margin:0;max-width:46ch;font-size:18px;line-height:1.5}.about__foot small{font:11px/1.7 Plex,monospace;text-transform:uppercase}.continuation{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.continuation path{fill:none;stroke:var(--red);stroke-width:2.2;vector-effect:non-scaling-stroke}
+    .mobile-thread{display:none}
+    @media(max-width:600px){
+      :root{--pad:18px}.hero{min-height:660px}.nav{padding-top:22px}.nav__links a:not(:last-child){display:none}.axis{top:72px}.axis span:nth-child(2){display:none}
+      .monolith{top:45%;font-size:23vw;line-height:.74;letter-spacing:-.095em}.monolith__row:nth-child(2){justify-content:flex-end;padding:0}.counter-stage{left:29%;top:36.5%;width:19vw}
+      .role{bottom:18px;grid-template-columns:1fr;gap:10px;padding-top:13px}.role h1{font-size:16px}.role p{font-size:10px;max-width:31ch}.role a{position:absolute;right:0;top:15px}.desktop-thread{display:none}.mobile-thread{display:block}
+      .about{padding-top:90px}.about h2{margin:18vh 0 70px;font-size:17vw;line-height:.88}.about__foot{grid-template-columns:1fr;gap:28px}.about__foot p{font-size:16px}
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero" aria-labelledby="c1-title">
+      <nav class="nav"><strong>HK</strong><div class="nav__links"><a href="#about">About</a><a href="#">Work</a><a href="mailto:herokey2018@gmail.com">Email ↗</a></div></nav>
+      <div class="axis"><span>HerokeyVN / Portfolio 2026</span><span>Ho Chi Minh City / 10.82°N</span></div>
+      <div class="counter-stage" aria-label="Reserved volume for a future 3D service sculpture"></div>
+      <svg class="thread back desktop-thread" viewBox="0 0 1440 900" aria-hidden="true"><path d="M18 164 C92 204 112 284 183 330 C246 371 285 330 350 345 C419 362 436 434 498 446"/><path d="M574 425 C645 401 677 438 687 480 C697 522 649 546 682 580 C724 623 805 552 871 584 C932 614 966 662 1030 650"/><path d="M1142 626 C1218 635 1263 690 1320 741 C1360 777 1381 786 1424 790"/></svg>
+      <svg class="thread front desktop-thread" viewBox="0 0 1440 900" aria-hidden="true"><path d="M498 446 C528 456 550 447 574 425"/><path d="M1030 650 C1062 640 1100 618 1142 626"/></svg>
+      <svg class="thread back mobile-thread" viewBox="0 0 390 844" aria-hidden="true"><path d="M14 154 C48 196 32 286 66 325 C96 358 122 322 155 342 C185 360 177 405 202 414"/><path d="M224 405 C251 392 267 421 262 446 C256 474 279 488 311 481 C338 475 353 507 375 543"/></svg>
+      <svg class="thread front mobile-thread" viewBox="0 0 390 844" aria-hidden="true"><path d="M202 414 C211 419 217 414 224 405"/></svg>
+      <div class="monolith" aria-hidden="true"><div class="monolith__row"><span>HER<span class="glyph">O</span></span></div><div class="monolith__row"><span>KEYVN</span></div></div>
+      <div class="role"><h1 id="c1-title">Backend Developer <span>/</span><br>Node.js &amp; TypeScript</h1><p>I build identity services, structured APIs, and practical backend systems.</p><a href="#about">Continue <i>↓</i></a></div>
+    </section>
+    <section class="about" id="about">
+      <svg class="continuation" viewBox="0 0 1440 900" preserveAspectRatio="none" aria-hidden="true"><path d="M1424 0 C1340 50 1280 116 1268 214 C1258 296 1328 325 1290 391 C1257 448 1145 426 1083 479"/></svg>
+      <div class="about__index">01 / About the work</div>
+      <h2>I build the systems <em>behind the interface.</em></h2>
+      <div class="about__foot"><p>Reliable services begin with clear boundaries: identity, data, protocols, and the decisions between them.</p><small>Future 3D direction<br>The service sculpture remains nested in the Hero counter, never displacing the typography.</small></div>
+    </section>
+  </main>
+</body>
+</html>

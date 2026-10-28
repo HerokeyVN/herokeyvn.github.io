@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
+  <title>Concept 02 — Engineering Ledger</title>
+  <style>
+    @font-face{font-family:Space;src:url("../../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-500-normal.woff2") format("woff2");font-weight:500;font-display:swap}
+    @font-face{font-family:Instrument;src:url("../../node_modules/@fontsource/instrument-serif/files/instrument-serif-latin-400-italic.woff2") format("woff2");font-style:italic;font-display:swap}
+    @font-face{font-family:Plex;src:url("../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2") format("woff2");font-display:swap}
+    :root{--paper:#f0eee7;--ink:#11110f;--red:#e83519;--line:#11110f2c;--pad:clamp(16px,2.2vw,32px)}
+    *{box-sizing:border-box}html,body{margin:0;background:var(--paper);color:var(--ink)}body{font-family:Space,Arial,sans-serif;overflow-x:hidden}a{color:inherit;text-decoration:none}
+    .hero{height:100svh;min-height:700px;padding:0 var(--pad);position:relative;overflow:hidden;background:var(--paper);isolation:isolate}
+    .frame{position:absolute;inset:14px;border:1px solid var(--line);pointer-events:none}
+    .nav{height:82px;position:relative;z-index:12;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;border-bottom:1px solid var(--line);font:11px/1 Plex,monospace;letter-spacing:.08em;text-transform:uppercase}.nav strong{font:500 22px/1 Space,sans-serif;letter-spacing:-.05em}.nav__center{display:flex;gap:32px}.nav__right{text-align:right}.nav b{color:var(--red);font-weight:400}
+    .ledger-meta{position:absolute;z-index:8;left:var(--pad);right:var(--pad);top:98px;display:flex;justify-content:space-between;font:10px/1 Plex,monospace;text-transform:uppercase;letter-spacing:.08em}
+    .composition{position:absolute;z-index:5;left:var(--pad);right:var(--pad);top:145px;bottom:118px;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(330px,.65fr);border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+    .title{position:relative;display:flex;flex-direction:column;justify-content:center;padding-right:3vw;border-right:1px solid var(--ink)}.title h1{margin:0;font:500 clamp(104px,12.5vw,180px)/.72 Space,sans-serif;letter-spacing:-.085em;text-transform:uppercase}.title h1 span{display:block}.title h1 span:nth-child(2){padding-left:8vw}.title__identity{position:absolute;left:0;bottom:20px;font:11px/1 Plex,monospace;letter-spacing:.1em;text-transform:uppercase}.title__identity strong{color:var(--red);font-weight:400}
+    .inspection{position:relative;padding:20px;display:flex;flex-direction:column;justify-content:space-between}.inspection__label,.inspection__note{font:10px/1.5 Plex,monospace;text-transform:uppercase;letter-spacing:.08em}.inspection__note{max-width:30ch;color:#585750}.viewport{position:absolute;inset:72px 20px 88px;border:1px solid var(--ink);overflow:hidden;background:linear-gradient(135deg,#e7e4da,#f7f5ef)}.viewport:before,.viewport:after{content:"";position:absolute;background:var(--line)}.viewport:before{left:50%;top:0;bottom:0;width:1px}.viewport:after{top:50%;left:0;right:0;height:1px}.viewport svg{position:absolute;inset:12%;width:76%;height:76%}.viewport circle,.viewport path{fill:none;stroke:#11110f;stroke-width:1}.viewport .signal{stroke:var(--red);stroke-width:1.8}.viewport .dot{fill:var(--red);stroke:none}
+    .footer{position:absolute;z-index:9;bottom:30px;left:var(--pad);right:var(--pad);display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:24px;font:11px/1.5 Plex,monospace}.footer p{margin:0;max-width:46ch}.footer a{padding:13px 18px;border:1px solid var(--ink);text-transform:uppercase}.footer .role{font:500 18px/1.1 Space,sans-serif;letter-spacing:-.03em}.footer .role em{font:italic 22px/1 Instrument,serif;color:var(--red)}
+    .thread{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.thread.back{z-index:3}.thread.front{z-index:7}.thread path{fill:none;stroke:var(--red);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}.thread circle{fill:var(--red)}.mobile-thread{display:none}
+    .about{position:relative;min-height:100svh;padding:120px var(--pad) 70px;background:#12110f;color:var(--paper);overflow:hidden}.about__head{display:flex;justify-content:space-between;padding-bottom:15px;border-bottom:1px solid #f0eee73a;font:10px/1 Plex,monospace;text-transform:uppercase;letter-spacing:.1em}.about h2{max-width:1240px;margin:14vh 0 90px;font:500 clamp(68px,9.5vw,137px)/.88 Space,sans-serif;letter-spacing:-.07em}.about h2 em{font:italic .95em/1 Instrument,serif;color:var(--red)}.about__grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5vw;padding-top:22px;border-top:1px solid #f0eee73a}.about__grid p{margin:0;font-size:17px;line-height:1.55}.about__grid small{font:10px/1.7 Plex,monospace;text-transform:uppercase;color:#aaa79f}.about-thread{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.about-thread path{fill:none;stroke:var(--red);stroke-width:2;vector-effect:non-scaling-stroke}
+    @media(max-width:600px){
+      :root{--pad:16px}.hero{min-height:680px}.frame{inset:7px}.nav{height:68px;grid-template-columns:1fr auto}.nav__center{display:none}.ledger-meta{top:82px}.ledger-meta span:last-child{display:none}
+      .composition{top:112px;bottom:168px;grid-template-columns:1fr;grid-template-rows:1fr 150px}.title{padding:10px 0;border-right:0;border-bottom:1px solid var(--ink)}.title h1{font-size:24vw;line-height:.78}.title h1 span:nth-child(2){padding-left:12vw}.title__identity{bottom:10px;font-size:9px}.inspection{padding:10px}.inspection__note{display:none}.viewport{inset:32px 10px 10px}.inspection__label{font-size:8px}
+      .footer{bottom:16px;grid-template-columns:1fr auto;gap:8px}.footer>p{display:none}.footer .role{font-size:15px}.footer .role em{font-size:18px}.footer a{padding:10px 12px;font-size:9px}.desktop-thread{display:none}.mobile-thread{display:block}
+      .about{padding-top:88px}.about h2{margin:18vh 0 70px;font-size:16.4vw;line-height:.9}.about__grid{grid-template-columns:1fr;gap:26px}.about__grid p{font-size:15px}.about__grid p:nth-child(2){display:none}
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero" aria-labelledby="c2-title">
+      <div class="frame"></div>
+      <nav class="nav"><strong>HEROKEYVN<b>.</b></strong><div class="nav__center"><a href="#about">About</a><a href="#">Projects</a><a href="#">Contact</a></div><div class="nav__right">Backend / 2026</div></nav>
+      <div class="ledger-meta"><span>Node.js + TypeScript</span><span>Identity · APIs · Protocols</span><span>Ho Chi Minh City</span></div>
+      <svg class="thread back desktop-thread" viewBox="0 0 1440 900" aria-hidden="true"><path d="M130 82 C132 154 104 221 141 278 C178 336 247 317 297 354 C347 392 314 453 365 482"/><path d="M426 468 C482 435 546 461 566 514 C586 569 523 597 563 642 C605 689 717 650 778 684 C820 708 853 744 907 756"/><path d="M1010 742 C1083 735 1114 686 1155 640 C1191 600 1244 593 1301 603 C1348 611 1376 640 1426 647"/></svg>
+      <svg class="thread front desktop-thread" viewBox="0 0 1440 900" aria-hidden="true"><path d="M365 482 C385 494 406 481 426 468"/><path d="M907 756 C939 764 974 746 1010 742"/></svg>
+      <svg class="thread back mobile-thread" viewBox="0 0 390 844" aria-hidden="true"><path d="M54 70 C54 135 34 183 68 228 C93 261 145 251 159 290 C174 333 128 348 156 378"/><path d="M178 366 C205 345 238 363 241 398 C244 431 214 454 247 482 C279 509 327 494 376 526"/></svg>
+      <svg class="thread front mobile-thread" viewBox="0 0 390 844" aria-hidden="true"><path d="M156 378 C164 384 171 376 178 366"/></svg>
+      <div class="composition">
+        <div class="title"><h1 id="c2-title"><span>Back</span><span>end</span></h1><div class="title__identity"><strong>HerokeyVN</strong> / Backend Developer</div></div>
+        <aside class="inspection" aria-label="Reserved stage for a future 3D systems artifact"><div class="inspection__label">Fig. 01 / System inspection window</div><div class="viewport"><svg viewBox="0 0 300 300" aria-hidden="true"><circle cx="150" cy="150" r="92"/><circle cx="150" cy="150" r="52"/><path d="M58 150H242M150 58V242"/><path class="signal" d="M44 196 C92 198 100 104 151 116 C201 127 196 196 258 172"/><circle class="dot" cx="44" cy="196" r="4"/><circle class="dot" cx="258" cy="172" r="4"/></svg></div><div class="inspection__note">Future 3D: one restrained service object, clipped inside this fixed frame. The ledger remains stable around it.</div></aside>
+      </div>
+      <div class="footer"><div class="role">Backend Developer<br><em>Node.js &amp; TypeScript</em></div><p>Building identity services, structured APIs, and practical applications.</p><a href="#about">Read profile ↓</a></div>
+    </section>
+    <section class="about" id="about">
+      <svg class="about-thread" viewBox="0 0 1440 900" preserveAspectRatio="none" aria-hidden="true"><path d="M1426 0 C1338 62 1312 126 1320 214 C1329 311 1378 336 1355 421 C1335 493 1256 502 1205 558"/></svg>
+      <div class="about__head"><span>01 / Working method</span><span>From surface to system</span></div>
+      <h2>Clear interfaces.<br><em>Dependable foundations.</em></h2>
+      <div class="about__grid"><p>I work behind the interface: identity flows, APIs, and the services that keep products coherent.</p><p>The visual system behaves like an engineering drawing—every line has a job, every boundary protects content.</p><small>3D integration strategy<br>Object stays contained in Fig. 01 and never dictates the page grid.</small></div>
+    </section>
+  </main>
+</body>
+</html>
