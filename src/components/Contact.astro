@@ -1,0 +1,212 @@
+---
+import { profile } from "../data/portfolio";
+---
+
+<footer class="contact section" id="contact" aria-labelledby="contact-title">
+  <div class="grid-shell">
+    <div class="contact__meta" data-reveal>
+      <div class="meta-tag">
+        <span class="meta-dot"></span>
+        <span>05 / Contact</span>
+      </div>
+      <span class="location-stamp">{profile.location}</span>
+    </div>
+
+    <div class="contact__body">
+      <p class="contact__eyebrow" data-reveal>
+        Available for backend engineering opportunities and practical product collaborations.
+      </p>
+
+      <h2 id="contact-title" class="contact__heading" data-reveal>
+        Let's build the backend<br />
+        <em>your product needs.</em>
+      </h2>
+
+      <div class="contact__portal" data-reveal>
+        <a class="contact__email-btn" href={`mailto:${profile.email}`}>
+          <span class="btn-text">{profile.email}</span>
+          <span class="btn-arrow" aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="contact__footer-bar" data-reveal>
+      <div class="footer-left">
+        <a href={profile.github} target="_blank" rel="noreferrer" class="footer-link">
+          <span>GitHub</span>
+          <span aria-hidden="true">↗</span>
+        </a>
+        <span class="footer-sep">/</span>
+        <a href="#top" class="footer-link">
+          <span>Back to Top</span>
+          <span aria-hidden="true">↑</span>
+        </a>
+      </div>
+
+      <div class="footer-right">
+        <p class="copyright-notice">
+          © {new Date().getFullYear()} HerokeyVN.
+        </p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .contact {
+    background: var(--void);
+    padding-top: clamp(6rem, 10vw, 10rem);
+    padding-bottom: clamp(3rem, 5vw, 5rem);
+  }
+
+  .contact__meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 1.5rem;
+    margin-bottom: clamp(3rem, 6vw, 5rem);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .meta-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--accent-cyan);
+  }
+
+  .meta-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--accent-cyan);
+    border-radius: 50%;
+  }
+
+  .location-stamp {
+    color: var(--text-dim);
+  }
+
+  .contact__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-bottom: clamp(4rem, 8vw, 7rem);
+  }
+
+  .contact__eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    max-width: 620px;
+  }
+
+  .contact__heading {
+    font-family: var(--font-display);
+    max-width: 78rem;
+    font-size: clamp(3.4rem, 7.7vw, 7.5rem);
+    font-weight: 700;
+    line-height: 0.88;
+    letter-spacing: -0.065em;
+    color: var(--text-primary);
+    text-transform: uppercase;
+  }
+
+  .contact__heading em {
+    display: block;
+    font-family: inherit;
+    font-style: normal;
+    font-weight: inherit;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(239, 237, 230, 0.55);
+  }
+
+  .contact__portal {
+    margin-top: 1rem;
+  }
+
+  .contact__email-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 1.25rem;
+    border-bottom: 1px solid var(--accent-red);
+    padding: 0 0 0.6rem;
+    border-radius: 0;
+    transition: transform 0.2s, border-color 0.2s, background 0.2s;
+  }
+
+  .contact__email-btn:hover {
+    color: var(--accent-red);
+  }
+
+  .btn-text {
+    font-family: var(--font-mono);
+    font-size: clamp(1rem, 1.8vw, 1.35rem);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--text-primary);
+  }
+
+  .btn-arrow {
+    font-size: 1.25rem;
+    color: var(--accent-cyan);
+    transition: transform 0.2s;
+  }
+
+  .contact__email-btn:hover .btn-arrow {
+    transform: translate(2px, -2px);
+  }
+
+  /* Footer Bottom Bar */
+  .contact__footer-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 2rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .footer-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .footer-link {
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: color 0.2s;
+  }
+
+  .footer-link:hover {
+    color: var(--accent-cyan);
+  }
+
+  .footer-sep {
+    color: var(--text-dim);
+  }
+
+  .copyright-notice {
+    color: var(--text-dim);
+  }
+
+  @media (max-width: 768px) {
+    .contact__footer-bar {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1.25rem;
+    }
+  }
+</style>

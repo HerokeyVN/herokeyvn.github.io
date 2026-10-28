@@ -1,0 +1,82 @@
+---
+import { profile } from "../data/portfolio";
+import SpatialAperture from "./SpatialAperture.astro";
+---
+
+<section class="hero" id="top" aria-labelledby="hero-title" data-thread-scene="hero">
+  <div class="hero__coordinates" data-hero-meta>
+    <span>03 / Spatial systems study</span>
+    <span>Node.js · TypeScript · Identity</span>
+  </div>
+
+  <SpatialAperture />
+
+  <svg class="hero-thread hero-thread--back hero-thread--desktop" data-hero-thread="back" viewBox="0 0 1440 900" preserveAspectRatio="none" aria-hidden="true">
+    <path data-thread-segment="0" d="M720 0 C714 96 675 132 682 204 C690 278 764 286 742 354 C723 414 632 408 610 474"></path>
+    <path data-thread-segment="2" d="M648 510 C702 546 752 503 795 532 C837 560 818 614 857 642 C899 671 948 630 994 651 C1037 670 1031 731 1067 765 C1100 796 1129 804 1138 900"></path>
+  </svg>
+  <svg class="hero-thread hero-thread--front hero-thread--desktop" data-hero-thread="front" viewBox="0 0 1440 900" preserveAspectRatio="none" aria-hidden="true">
+    <path data-thread-segment="1" d="M610 474 C612 496 627 501 648 510"></path>
+  </svg>
+
+  <svg class="hero-thread hero-thread--back hero-thread--mobile" data-hero-thread-mobile="back" viewBox="0 0 390 844" preserveAspectRatio="none" aria-hidden="true">
+    <path data-thread-segment-mobile="0" d="M195 0 C194 74 156 104 169 164 C181 218 235 226 222 278 C210 325 148 326 146 378"></path>
+    <path data-thread-segment-mobile="2" d="M172 398 C210 423 234 392 264 416 C293 440 268 486 297 510 C320 529 345 521 368 551 C384 574 370 623 383 662"></path>
+  </svg>
+  <svg class="hero-thread hero-thread--front hero-thread--mobile" data-hero-thread-mobile="front" viewBox="0 0 390 844" preserveAspectRatio="none" aria-hidden="true">
+    <path data-thread-segment-mobile="1" d="M146 378 C151 390 159 393 172 398"></path>
+  </svg>
+
+  <h1 class="hero__identity" id="hero-title" aria-label="HerokeyVN — Backend Developer">
+    <span class="hero__identity-left" data-identity-line><span aria-hidden="true">HER</span><span class="hero__outline" aria-hidden="true">O</span></span>
+    <span class="hero__identity-right" data-identity-line><span class="hero__outline" aria-hidden="true">K</span><span aria-hidden="true">EYVN</span></span>
+  </h1>
+
+  <div class="hero__role" data-hero-support>
+    <p class="hero__role-title">Backend<br />Developer</p>
+    <p>{profile.name} builds Node.js and TypeScript services behind digital products—identity, APIs, and practical system architecture.</p>
+  </div>
+
+  <a class="hero__scroll" href="#about" data-hero-support>Enter the system <span aria-hidden="true">↓</span></a>
+</section>
+
+<style>
+  .hero { position: relative; min-height: max(43.75rem, 100svh); overflow: hidden; isolation: isolate; background: radial-gradient(circle at 50% 47%, #15131d 0, #08080c 25%, #030305 61%); }
+  .hero__coordinates { position: absolute; z-index: 10; top: 50%; right: var(--gutter); left: var(--gutter); display: flex; justify-content: space-between; color: #706d73; font: 400 0.56rem/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .hero__identity { position: absolute; z-index: 5; top: 46%; right: var(--gutter); left: var(--gutter); display: grid; grid-template-columns: 1fr 1fr; align-items: center; margin: 0; transform: translateY(-50%); color: var(--text-primary); font: 700 clamp(6.1rem, 12.4vw, 11.125rem)/0.8 var(--font-display); letter-spacing: -0.085em; text-transform: uppercase; white-space: nowrap; }
+  .hero__identity-left, .hero__identity-right { display: block; will-change: transform, opacity; }
+  .hero__identity-left { text-align: left; }
+  .hero__identity-right { text-align: right; }
+  .hero__outline { color: transparent; -webkit-text-stroke: 1.4px var(--text-primary); }
+  .hero__role { position: absolute; z-index: 12; bottom: 2rem; left: var(--gutter); display: flex; align-items: flex-end; gap: 1.625rem; will-change: transform, opacity; }
+  .hero__role-title { margin: 0; color: var(--text-primary); font: 700 clamp(2.25rem, 4.5vw, 4.0625rem)/0.88 var(--font-display); letter-spacing: -0.055em; text-transform: uppercase; }
+  .hero__role > p:last-child { max-width: 34ch; margin-bottom: 0.2rem; color: #b0ada7; font: 400 0.69rem/1.6 var(--font-mono); }
+  .hero__scroll { position: absolute; z-index: 12; right: var(--gutter); bottom: 2.35rem; font: 400 0.625rem/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; will-change: transform, opacity; }
+  .hero__scroll span { color: var(--accent-red); }
+  .hero-thread { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .hero-thread--back { z-index: 3; }
+  .hero-thread--front { z-index: 8; }
+  .hero-thread--mobile { display: none; }
+  .hero-thread path { fill: none; stroke: var(--accent-red); stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+
+  @media (max-width: 600px) {
+    .hero { min-height: max(42.5rem, 100svh); }
+    .hero__coordinates { top: 42%; }
+    .hero__coordinates span:last-child { display: none; }
+    .hero__identity { top: 39%; display: flex; flex-direction: column; align-items: stretch; font-size: 23vw; line-height: 0.75; }
+    .hero__identity-left { text-align: left; }
+    .hero__identity-right { margin-top: 16vw; text-align: right; }
+    .hero__role { right: var(--gutter); bottom: 1.5rem; display: block; }
+    .hero__role-title { font-size: 10.5vw; }
+    .hero__role > p:last-child { max-width: 30ch; margin-top: 0.75rem; font-size: 0.56rem; }
+    .hero__scroll { bottom: 1.625rem; font-size: 0.5rem; }
+    .hero-thread--desktop { display: none; }
+    .hero-thread--mobile { display: block; }
+    .hero-thread path { stroke-width: 1.7px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero__identity-left, .hero__identity-right, .hero__role, .hero__scroll { will-change: auto; }
+    .hero-thread path { stroke-dasharray: none !important; stroke-dashoffset: 0 !important; }
+  }
+</style>

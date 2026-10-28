@@ -1,0 +1,109 @@
+---
+import { skills } from "../data/portfolio";
+import SectionHeading from "./SectionHeading.astro";
+---
+
+<section class="capabilities section" id="skills" aria-labelledby="skills-title">
+  <div class="grid-shell">
+    <SectionHeading id="skills-title" index="04" eyebrow="Technical range" title="A focused set of tools," italicWord="used with intent." />
+
+    <div class="capabilities__layout">
+      <div class="skill-index" data-reveal>
+        {skills.map((group, index) => (
+          <article class="skill-row">
+            <span class="skill-row__index">0{index + 1}</span>
+            <h3>{group.label}</h3>
+            <p>{group.items.join(" · ")}</p>
+          </article>
+        ))}
+      </div>
+
+      <article class="education" id="education" data-reveal aria-labelledby="education-title">
+        <p class="education__meta">Education / 2024 — present</p>
+        <h3 id="education-title">Data Science &amp; Artificial Intelligence</h3>
+        <p class="education__institution">Ho Chi Minh City University of Transport</p>
+        <p class="education__status">Undergraduate student</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<style>
+  .capabilities__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(18rem, 0.75fr);
+    gap: clamp(4rem, 9vw, 9rem);
+    align-items: start;
+  }
+
+  .skill-index { border-top: 1px solid var(--border-strong); }
+
+  .skill-row {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(9rem, 0.7fr) 1.3fr;
+    gap: clamp(1rem, 3vw, 3rem);
+    align-items: baseline;
+    padding: 1.35rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .skill-row__index {
+    color: var(--accent-red);
+    font: 400 0.68rem/1.5 var(--font-mono);
+  }
+
+  .skill-row h3 {
+    color: var(--text-primary);
+    font-size: clamp(1rem, 1.5vw, 1.25rem);
+    font-weight: 600;
+  }
+
+  .skill-row p {
+    color: var(--text-secondary);
+    font: 400 clamp(0.75rem, 0.95vw, 0.9rem)/1.7 var(--font-mono);
+  }
+
+  .education {
+    padding-top: 1.35rem;
+    border-top: 1px solid var(--accent-red);
+  }
+
+  .education__meta {
+    margin-bottom: clamp(2rem, 5vw, 4rem);
+    color: var(--accent-red);
+    font: 400 0.68rem/1.5 var(--font-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .education h3 {
+    color: var(--text-primary);
+    font-family: var(--font-display);
+    font-size: clamp(1.8rem, 3vw, 2.8rem);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1.05;
+  }
+
+  .education__institution {
+    margin-top: 1.5rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  .education__status {
+    margin-top: 0.35rem;
+    color: var(--text-muted);
+    font: 400 0.75rem/1.5 var(--font-mono);
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 900px) {
+    .capabilities__layout { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    .skill-row { grid-template-columns: 2rem 1fr; }
+    .skill-row p { grid-column: 2; }
+  }
+</style>

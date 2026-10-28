@@ -1,0 +1,38 @@
+---
+const links = [
+  { href: "#about", label: "Profile" },
+  { href: "#projects", label: "Projects" },
+  { href: "mailto:herokey2018@gmail.com", label: "Connect ↗" },
+];
+---
+
+<header class="site-header" data-site-header>
+  <a class="brand-mark" href="#top">HerokeyVN<span class="sr-only"> — Back to top</span></a>
+
+  <button class="menu-toggle" type="button" aria-label="Index menu" aria-expanded="false" aria-controls="site-navigation" data-menu-toggle>
+    <span>Index</span>
+  </button>
+
+  <nav class="site-nav" id="site-navigation" aria-label="Primary navigation" data-site-nav>
+    <ol>
+      {links.map((link) => <li><a href={link.href}>{link.label}</a></li>)}
+    </ol>
+  </nav>
+</header>
+
+<script>
+  const toggle = document.querySelector<HTMLButtonElement>("[data-menu-toggle]");
+  const navigation = document.querySelector<HTMLElement>("[data-site-nav]");
+
+  const setMenu = (open: boolean) => {
+    if (!toggle || !navigation) return;
+    toggle.setAttribute("aria-expanded", String(open));
+    navigation.toggleAttribute("data-open", open);
+    document.body.toggleAttribute("data-menu-open", open);
+    if (open) navigation.querySelector<HTMLAnchorElement>("a")?.focus();
+  };
+
+  toggle?.addEventListener("click", () => setMenu(toggle.getAttribute("aria-expanded") !== "true"));
+  navigation?.querySelectorAll("a").forEach((link) => link.addEventListener("click", () => setMenu(false)));
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") setMenu(false); });
+</script>

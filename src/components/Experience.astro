@@ -1,0 +1,246 @@
+---
+import { experience } from "../data/portfolio";
+import SectionHeading from "./SectionHeading.astro";
+---
+
+<section class="experience section" id="experience" aria-labelledby="experience-title">
+  <div class="grid-shell">
+    <SectionHeading
+      id="experience-title"
+      index="02"
+      eyebrow="Professional Track"
+      title="Working where identity"
+      italicWord="meets infrastructure."
+    />
+
+    <article class="experience__dossier" data-reveal>
+      <!-- Organization Identity & Role Progression -->
+      <div class="experience__sidebar">
+        <div class="org-identity">
+          <h3 class="org-name">{experience.company}</h3>
+          <p class="org-role">{experience.role}</p>
+          <time class="org-duration">{experience.duration}</time>
+        </div>
+
+        <div class="progression-timeline">
+          <span class="timeline-title">Career Milestones</span>
+          <ol class="timeline-steps">
+            {experience.progression.map((step) => {
+              const [role, dates] = step.split(" · ");
+              return (
+                <li class="timeline-step">
+                  <span class="step-marker" aria-hidden="true"></span>
+                  <div class="step-info">
+                    <strong class="step-role">{role}</strong>
+                    <span class="step-dates">{dates}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </div>
+
+      <!-- Core Architectural Responsibilities -->
+      <div class="experience__initiatives">
+        <span class="initiatives-title">Selected responsibilities</span>
+        <ul class="initiatives-list">
+          {experience.responsibilities.map((item, index) => {
+            return (
+              <li class="initiative-card">
+                <div class="initiative-header">
+                  <span class="initiative-index">0{index + 1}</span>
+                </div>
+                <p class="initiative-text">{item}</p>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </article>
+  </div>
+</section>
+
+<style>
+  .experience__dossier {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: clamp(3rem, 6vw, 6rem);
+    border-top: 1px solid var(--border-strong);
+    padding: clamp(2rem, 4vw, 3.5rem) 0 0;
+  }
+
+  /* Sidebar */
+  .experience__sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
+    border-right: 1px solid var(--border-subtle);
+    padding-right: clamp(1.5rem, 3vw, 3rem);
+  }
+
+  .org-identity {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .org-name {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 3vw, 2.75rem);
+    font-weight: 800;
+    line-height: 1;
+    color: var(--text-primary);
+    letter-spacing: -0.03em;
+  }
+
+  .org-role {
+    font-size: 1.125rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .org-duration {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  /* Timeline */
+  .progression-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .timeline-title {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .timeline-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    position: relative;
+    padding-left: 1.25rem;
+  }
+
+  .timeline-steps::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 4px;
+    width: 2px;
+    background: linear-gradient(180deg, var(--accent-red) 0%, rgba(255, 59, 18, 0.25) 100%);
+  }
+
+  .timeline-step {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .step-marker {
+    position: absolute;
+    left: -1.25rem;
+    top: 5px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent-red);
+  }
+
+  .step-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .step-role {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .step-dates {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  /* Initiatives */
+  .experience__initiatives {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .initiatives-title {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 0.75rem;
+  }
+
+  .initiatives-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+
+  .initiative-card {
+    border-top: 1px solid var(--border-subtle);
+    padding: 1.2rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .initiative-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .initiative-index {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent-cyan);
+  }
+
+  .initiative-text {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  @media (max-width: 1024px) {
+    .experience__dossier {
+      grid-template-columns: 1fr;
+      gap: 3rem;
+    }
+
+    .experience__sidebar {
+      border-right: none;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-right: 0;
+      padding-bottom: 2.5rem;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .initiatives-list {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

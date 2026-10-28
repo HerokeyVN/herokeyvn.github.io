@@ -1,0 +1,77 @@
+---
+import About from "../components/About.astro";
+import Contact from "../components/Contact.astro";
+import Experience from "../components/Experience.astro";
+import Hero from "../components/Hero.astro";
+import Projects from "../components/Projects.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import SkillsEducation from "../components/SkillsEducation.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const title = "HerokeyVN — Backend Developer | Node.js & TypeScript";
+const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh City building Node.js and TypeScript systems, identity services, and practical applications.";
+---
+
+<BaseLayout title={title} description={description}>
+  <SiteHeader />
+  <main id="main-content">
+    <svg class="site-thread" data-site-thread aria-hidden="true">
+      {[0, 1, 2, 3, 4].map((segment) => <path data-site-thread-segment={segment}></path>)}
+      <circle data-site-thread-end r="4"></circle>
+    </svg>
+    <Hero />
+    <About />
+    <Experience />
+    <Projects />
+    <SkillsEducation />
+  </main>
+  <Contact />
+
+  <style>
+    #main-content {
+      position: relative;
+      z-index: 2;
+      background-color: var(--void);
+    }
+
+    .site-thread {
+      position: absolute;
+      inset: 0 auto auto 0;
+      z-index: 3;
+      width: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+
+    .site-thread path {
+      fill: none;
+      stroke: var(--accent-red);
+      stroke-width: 2px;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .site-thread circle { fill: var(--accent-red); }
+
+    @media (max-width: 600px) {
+      .site-thread path { stroke-width: 1.7px; }
+    }
+
+  </style>
+
+  <script>
+    import { initMotion } from "../scripts/motion";
+    import { initHeroThread } from "../scripts/hero-thread";
+    import { initSiteThread } from "../scripts/site-thread";
+
+    const destroyMotion = initMotion();
+    const destroyHeroThread = initHeroThread();
+    const destroySiteThread = initSiteThread();
+    window.addEventListener("pagehide", () => {
+      destroyHeroThread();
+      destroySiteThread();
+      destroyMotion();
+    }, { once: true });
+  </script>
+</BaseLayout>

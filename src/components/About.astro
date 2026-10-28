@@ -1,0 +1,53 @@
+<section class="about section" id="about" aria-labelledby="about-title" data-thread-section>
+  <div class="about__orbit" aria-hidden="true"></div>
+  <div class="grid-shell">
+    <p class="about__kicker" data-reveal>01 / The work behind the surface</p>
+    <h2 id="about-title" class="about__title" data-display-heading data-reveal>
+      <span>Built for the parts</span>
+      <span class="about__outline">users don't see.</span>
+    </h2>
+
+    <div class="about__statement" data-reveal>
+      <p>Backend work is spatial: services have distance, dependency, pressure, and flow. I make that invisible structure dependable.</p>
+      <span class="about__node" aria-hidden="true"></span>
+      <p class="about__note">Node.js · TypeScript<br />Identity · APIs · Architecture</p>
+    </div>
+
+    <div class="about__profile">
+      <p class="about__lead" data-reveal>
+        I build the services behind the interface—the identity flows, APIs, and practical architectures that make software dependable.
+      </p>
+      <div class="about__copy" data-reveal>
+        <p>With one year of professional experience centered on Node.js and TypeScript, I focus on identity management, structured API endpoints, and secure protocol implementation.</p>
+        <p>At FIDT, I contributed to migrating user information retrieval from Directus to Ory Kratos, developed domain Admin APIs, and supported frontend integration.</p>
+        <p>I am currently studying Data Science &amp; Artificial Intelligence at Ho Chi Minh City University of Transport.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .about { min-height: 100svh; overflow: hidden; background: radial-gradient(circle at 50% 0, #252039 0, #121119 36%, #08080c 76%); }
+  .about__orbit { position: absolute; top: -13.125rem; left: 50%; width: 41.25rem; height: 41.25rem; border: 1px solid rgba(239, 237, 230, 0.085); border-radius: 50%; box-shadow: 0 0 0 5.625rem rgba(255, 255, 255, 0.006), 0 0 0 11.25rem rgba(255, 255, 255, 0.004); transform: translateX(-50%); }
+  .about__kicker { position: relative; z-index: 4; text-align: center; color: #9b98a0; font: 400 0.56rem/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; }
+  .about__title { position: relative; z-index: 4; max-width: 74rem; margin: clamp(9rem, 22vh, 13rem) auto 5.5rem; text-align: center; font: 700 clamp(4.125rem, 9vw, 8.125rem)/0.84 var(--font-display); letter-spacing: -0.07em; text-transform: uppercase; }
+  .about__title span { display: block; }
+  .about__outline { color: transparent; -webkit-text-stroke: 1px rgba(239, 237, 230, 0.55); }
+  .about__statement { position: relative; z-index: 4; display: grid; grid-template-columns: 1fr auto 1fr; align-items: start; gap: 6vw; padding-top: 1.55rem; border-top: 1px solid rgba(239, 237, 230, 0.17); }
+  .about__statement > p:first-child { max-width: 40ch; font-size: 1.05rem; line-height: 1.55; }
+  .about__node { width: 0.45rem; height: 0.45rem; margin-top: 0.5rem; border-radius: 50%; background: var(--accent-red); }
+  .about__note { justify-self: end; color: #9b98a0; font: 400 0.56rem/1.7 var(--font-mono); text-transform: uppercase; }
+  .about__profile { position: relative; z-index: 4; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: clamp(3rem, 10vw, 10rem); margin-top: clamp(8rem, 15vw, 14rem); padding-top: 2rem; border-top: 1px solid var(--border-subtle); }
+  .about__lead { max-width: 22ch; font: 500 clamp(1.65rem, 3vw, 3rem)/1.15 var(--font-sans); letter-spacing: -0.04em; }
+  .about__copy { display: grid; gap: 1.5rem; max-width: 38rem; color: var(--text-secondary); }
+  .about__copy p { line-height: 1.75; }
+
+  @media (max-width: 700px) {
+    .about__orbit { top: -6.875rem; width: 22.5rem; height: 22.5rem; }
+    .about__title { margin: 22vh 0 5rem; font-size: 15.8vw; }
+    .about__statement { grid-template-columns: 1fr; gap: 1.5rem; }
+    .about__node { display: none; }
+    .about__note { justify-self: start; }
+    .about__profile { grid-template-columns: 1fr; gap: 3rem; }
+  }
+</style>

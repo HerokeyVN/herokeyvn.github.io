@@ -1,0 +1,38 @@
+<div class="spatial-aperture" data-spatial-aperture aria-hidden="true">
+  <span class="spatial-aperture__ring spatial-aperture__ring--inner"></span>
+  <span class="spatial-aperture__ring spatial-aperture__ring--core"></span>
+  <span class="spatial-aperture__axis spatial-aperture__axis--x"></span>
+  <span class="spatial-aperture__axis spatial-aperture__axis--y"></span>
+  <span class="spatial-aperture__mount" data-spatial-mount></span>
+</div>
+
+<style>
+  .spatial-aperture {
+    position: absolute;
+    z-index: 2;
+    top: 46%;
+    left: 50%;
+    width: min(36vw, 31.25rem);
+    aspect-ratio: 1;
+    border: 1px solid rgba(239, 237, 230, 0.17);
+    border-radius: 50%;
+    box-shadow: 0 0 0 5vw rgba(255, 255, 255, 0.015), 0 0 0 11vw rgba(255, 255, 255, 0.008), 0 0 8rem rgba(109, 90, 255, 0.08);
+    transform: translate(-50%, -50%);
+  }
+
+  .spatial-aperture__ring,
+  .spatial-aperture__axis,
+  .spatial-aperture__mount { position: absolute; pointer-events: none; }
+  .spatial-aperture__ring { border: 1px solid rgba(239, 237, 230, 0.09); border-radius: 50%; }
+  .spatial-aperture__ring--inner { inset: 12%; }
+  .spatial-aperture__ring--core { inset: 35%; border-color: rgba(255, 60, 26, 0.29); box-shadow: 0 0 1.75rem rgba(255, 60, 26, 0.12); }
+  .spatial-aperture__axis--x { top: 50%; left: -22.5%; width: 145%; height: 1px; background: linear-gradient(90deg, transparent, rgba(239, 237, 230, 0.17), transparent); }
+  .spatial-aperture__axis--y { top: -22.5%; left: 50%; width: 1px; height: 145%; background: linear-gradient(180deg, transparent, rgba(239, 237, 230, 0.08), transparent); }
+
+  /* Stable, engine-agnostic mount for a future renderer. */
+  .spatial-aperture__mount { inset: 8%; overflow: hidden; border-radius: 50%; contain: layout paint size; }
+
+  @media (max-width: 600px) {
+    .spatial-aperture { top: 39%; width: 68vw; }
+  }
+</style>

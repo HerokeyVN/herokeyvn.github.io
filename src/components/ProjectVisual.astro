@@ -1,0 +1,79 @@
+---
+import type { Project } from "../data/portfolio";
+
+interface Props { project: Project; }
+const { project } = Astro.props;
+---
+
+{project.slug === "fb-messenger-e2ee" && (
+  <div class="project-visual project-visual--protocol" data-project-visual role="img" aria-label="Signal and Noise protocol system composition">
+    <svg viewBox="0 0 900 560" aria-hidden="true">
+      <circle class="protocol-orbit protocol-orbit--outer" cx="450" cy="280" r="214"></circle>
+      <circle class="protocol-orbit" cx="450" cy="280" r="128"></circle>
+      <circle class="protocol-core" cx="450" cy="280" r="42"></circle>
+      <path class="protocol-route" d="M80 390 C198 390 201 196 337 214 C420 225 399 350 493 345 C596 339 605 159 820 175"></path>
+      <circle class="protocol-node" cx="337" cy="214" r="5"></circle>
+      <circle class="protocol-node" cx="493" cy="345" r="5"></circle>
+    </svg>
+    <span class="visual-label visual-label--top">Signal Protocol / Key state</span>
+    <span class="visual-label visual-label--bottom">Noise transport / Encrypted flow</span>
+    <strong class="visual-mark">E2EE</strong>
+  </div>
+)}
+
+{project.slug === "sky-sheet-store" && (
+  <div class="project-visual project-visual--product" data-project-visual>
+    <img src="/images/projects/sky-sheet-store.webp" alt="Sky Sheet Store music sheet discovery platform" width="1280" height="800" loading="lazy" decoding="async" />
+    <span class="visual-index">02 / Live platform</span>
+    <span class="visual-caption">Discovery · Sharing · Practice</span>
+  </div>
+)}
+
+{project.slug === "sky-auto-piano" && (
+  <div class="project-visual project-visual--piano" data-project-visual role="img" aria-label="Sky Auto Piano playback sequence composition">
+    <div class="piano-grid" aria-hidden="true">
+      {Array.from({ length: 15 }).map((_, index) => <span class:list={["piano-key", index === 2 || index === 7 || index === 11 ? "piano-key--active" : ""]}>{String(index + 1).padStart(2, "0")}</span>)}
+    </div>
+    <div class="piano-identity">
+      <img src="/images/projects/sky-auto-piano.png" alt="" width="88" height="88" loading="lazy" />
+      <strong>Sky Auto Piano</strong>
+      <span>Desktop playback automation</span>
+    </div>
+  </div>
+)}
+
+<style>
+  .project-visual { position: relative; min-height: clamp(24rem, 43vw, 39rem); overflow: hidden; border: 1px solid var(--border-subtle); background: #060608; }
+  .project-visual--protocol { background: radial-gradient(circle at 50% 50%, #1a1726 0, #0b0a10 46%, #050507 78%); }
+  .project-visual--protocol svg { position: absolute; inset: 5%; width: 90%; height: 90%; }
+  .protocol-orbit { fill: none; stroke: rgba(239, 237, 230, 0.16); stroke-width: 1; }
+  .protocol-orbit--outer { stroke: rgba(239, 237, 230, 0.08); }
+  .protocol-core { fill: none; stroke: rgba(255, 60, 26, 0.55); stroke-width: 1; }
+  .protocol-route { fill: none; stroke: var(--accent-red); stroke-width: 2; }
+  .protocol-node { fill: var(--accent-red); }
+  .visual-label, .visual-index, .visual-caption { position: absolute; z-index: 2; color: var(--text-muted); font: 400 0.62rem/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .visual-label--top { top: 1.5rem; left: 1.5rem; }
+  .visual-label--bottom { right: 1.5rem; bottom: 1.5rem; }
+  .visual-mark { position: absolute; top: 50%; left: 50%; color: var(--text-primary); font: 700 clamp(4rem, 8vw, 8rem)/1 var(--font-display); letter-spacing: -0.08em; transform: translate(-50%, -50%); }
+
+  .project-visual--product::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, rgba(3, 3, 5, 0.82)); pointer-events: none; }
+  .project-visual--product img { width: 100%; height: 100%; min-height: inherit; object-fit: cover; object-position: center top; filter: saturate(0.72) contrast(1.05); }
+  .visual-index { top: 1.5rem; left: 1.5rem; padding: 0.45rem 0.65rem; color: var(--text-primary); background: rgba(3, 3, 5, 0.75); }
+  .visual-caption { right: 1.5rem; bottom: 1.5rem; color: var(--text-primary); }
+
+  .project-visual--piano { display: grid; place-items: center; background: radial-gradient(circle at 50% 46%, #201b2c 0, #0a090e 48%, #050507 78%); }
+  .piano-grid { position: absolute; inset: 8%; display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; opacity: 0.8; }
+  .piano-key { display: flex; align-items: flex-end; padding: 0.65rem; border: 1px solid rgba(239, 237, 230, 0.1); color: #77747b; font: 400 0.56rem/1 var(--font-mono); }
+  .piano-key--active { border-color: rgba(255, 60, 26, 0.6); background: rgba(255, 60, 26, 0.08); color: var(--accent-red); }
+  .piano-identity { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; padding: 2rem; background: rgba(3, 3, 5, 0.72); text-align: center; }
+  .piano-identity img { width: 5.5rem; height: 5.5rem; margin-bottom: 1rem; }
+  .piano-identity strong { font: 700 clamp(2rem, 4vw, 4rem)/1 var(--font-display); letter-spacing: -0.055em; }
+  .piano-identity span { margin-top: 0.75rem; color: var(--text-muted); font: 400 0.62rem/1.4 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; }
+
+  @media (max-width: 600px) {
+    .project-visual { min-height: 23rem; }
+    .project-visual--product img { object-position: 38% top; }
+    .piano-grid { inset: 5%; gap: 0.3rem; }
+    .piano-key { padding: 0.35rem; }
+  }
+</style>

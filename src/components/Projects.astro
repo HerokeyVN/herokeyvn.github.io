@@ -1,0 +1,269 @@
+---
+import { projects } from "../data/portfolio";
+import ProjectVisual from "./ProjectVisual.astro";
+import SectionHeading from "./SectionHeading.astro";
+---
+
+<section class="projects section" id="projects" aria-labelledby="projects-title">
+  <div class="grid-shell">
+    <SectionHeading
+      id="projects-title"
+      index="03"
+      eyebrow="Curated Repertoire"
+      title="Systems made"
+      italicWord="tangible."
+    />
+
+    <p class="projects__intro" data-reveal>
+      Three standalone architectures spanning cryptographic protocols, distributed music platforms, and desktop automation runtimes.
+    </p>
+
+    <div class="projects__showcase">
+      {projects.map((project, idx) => {
+        const isAlternate = idx % 2 === 1;
+        const isPanoramic = project.slug === "sky-sheet-store";
+
+        return (
+          <article
+            class:list={[
+              "project-exhibit",
+              isPanoramic ? "project-exhibit--panoramic" : isAlternate ? "project-exhibit--reversed" : "",
+            ]}
+            id={project.slug}
+            data-project
+            data-reveal
+          >
+            <!-- Project Visual Stage -->
+            <div class="project-exhibit__visual">
+              <ProjectVisual project={project} />
+            </div>
+
+            <!-- Project Editorial Content -->
+            <div class="project-exhibit__content">
+              <div class="project-exhibit__header">
+                <span class="project-index">INDEX // 0{idx + 1}</span>
+                <span class="project-category">{project.category}</span>
+              </div>
+
+              <h3 class:list={["project-name", project.slug === "fb-messenger-e2ee" ? "project-name--e2ee" : ""]}>
+                {project.name}
+              </h3>
+
+              <p class="project-description">{project.description}</p>
+
+              <div class="project-tech-group">
+                <span class="tech-label">CORE STACK:</span>
+                <ul class="project-tech-list" aria-label={`${project.name} technologies`}>
+                  {project.technologies.map((tech) => (
+                    <li class="tech-tag">{tech}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div class="project-actions">
+                <a class="action-btn" href={project.href} target="_blank" rel="noreferrer">
+                  <span>{project.linkLabel}</span>
+                  <span aria-hidden="true">↗</span>
+                </a>
+                {project.sourceNote && <span class="action-note">{project.sourceNote}</span>}
+              </div>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  </div>
+</section>
+
+<style>
+  .projects__intro {
+    font-size: clamp(1.125rem, 1.8vw, 1.35rem);
+    line-height: 1.6;
+    color: var(--text-secondary);
+    max-width: 720px;
+    margin-top: -2rem;
+    margin-bottom: clamp(3.5rem, 6vw, 6rem);
+  }
+
+  .projects__showcase {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(4rem, 8vw, 8rem);
+  }
+
+  /* Base Project Exhibit */
+  .project-exhibit {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(2.5rem, 5vw, 5rem);
+    align-items: center;
+    padding-bottom: clamp(3rem, 6vw, 6rem);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .project-exhibit:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  /* Reversed layout (Sky Auto Piano) */
+  .project-exhibit--reversed {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .project-exhibit--reversed .project-exhibit__visual {
+    order: 2;
+  }
+
+  .project-exhibit--reversed .project-exhibit__content {
+    order: 1;
+  }
+
+  /* Panoramic layout (Sky Sheet Store) */
+  .project-exhibit--panoramic {
+    grid-template-columns: 1fr;
+    gap: 3rem;
+  }
+
+  .project-exhibit--panoramic .project-exhibit__content {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 3rem;
+    align-items: start;
+  }
+
+  /* Exhibit Content */
+  .project-exhibit__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .project-exhibit__header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .project-index {
+    color: var(--accent-cyan);
+    font-weight: 500;
+  }
+
+  .project-category {
+    color: var(--text-muted);
+  }
+
+  .project-name {
+    font-family: var(--font-display);
+    font-size: clamp(2.2rem, 3.8vw, 3.5rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+    color: var(--text-primary);
+  }
+
+  .project-name--e2ee {
+    white-space: nowrap;
+    font-size: clamp(1.8rem, 3.2vw, 3rem);
+  }
+
+  @media (max-width: 640px) {
+    .project-name--e2ee {
+      white-space: normal;
+      word-break: break-word;
+    }
+  }
+
+  .project-description {
+    font-size: 1.0625rem;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+
+  /* Tech list */
+  .project-tech-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .tech-label {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+  }
+
+  .project-tech-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .tech-tag {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    padding-right: 0.75rem;
+  }
+
+  /* Actions */
+  .project-actions {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0 0 0.35rem;
+    border-bottom: 1px solid var(--accent-red);
+    transition: color 0.2s;
+  }
+
+  .action-btn:hover {
+    color: var(--accent-red);
+  }
+
+  .action-note {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 1024px) {
+    .project-exhibit,
+    .project-exhibit--reversed {
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+    }
+
+    .project-exhibit--reversed .project-exhibit__visual {
+      order: 1;
+    }
+
+    .project-exhibit--reversed .project-exhibit__content {
+      order: 2;
+    }
+
+    .project-exhibit--panoramic .project-exhibit__content {
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+  }
+</style>
