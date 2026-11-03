@@ -1,10 +1,10 @@
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { GLYPH_JUNCTION_PREFERENCES, type JunctionPreference } from "../data/about-glyphs";
+import { findTransition, type AnchorPreference, type GlyphTransition } from "../data/about-glyphs";
 
 type Segment = { element?: SVGPathElement; drawLength: number; weight: number; startDistance: number; kind: "open" | "closed" | "hidden"; layer: "site" | "glyph"; startScroll: number; endScroll: number };
 type Junction = { x: number; y: number; distance: number };
-type GlyphRecord = { key: string; left: number; top: number; scale: number; paths: SVGPathElement[]; junctions: Junction[]; lineIndex: number };
+type GlyphRecord = { key: string; left: number; top: number; baselineY: number; scale: number; paths: SVGPathElement[]; junctions: Junction[]; lineIndex: number };
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 export function initSiteThread() {
@@ -69,7 +69,7 @@ export function initSiteThread() {
     originX: number,
     baselineY: number,
     scale: number,
-    pref?: JunctionPreference,
+    pref?: AnchorPreference,
   ): Junction => {
     const length = path.getTotalLength();
     const samples = 120;
@@ -103,8 +103,17 @@ export function initSiteThread() {
     return { x: originX + best.x * scale, y: baselineY + best.y * scale, distance: best.distance };
   };
 
-  const createConnector = (from: Junction, to: Junction, sameLine: boolean, fontSize: number): Segment => {
-    if (!sameLine) {
+  const createConnector = (
+    fromGlyph: GlyphRecord,
+    toGlyph: GlyphRecord,
+    from: Junction,
+    to: Junction,
+    sameLine: boolean,
+    fontSize: number,
+    trans?: GlyphTransition,
+  ): Segment => {
+    const isVisible = Boolean(sameLine && trans && trans.visibility === "visible");
+    if (!isVisible) {
       return {
         drawLength: 0,
         weight: Math.max(fontSize * 0.22, Math.hypot(to.x - from.x, to.y - from.y) * 0.18),
@@ -117,12 +126,14 @@ export function initSiteThread() {
     }
     const element = document.createElementNS(SVG_NS, "path");
     element.dataset.glyphConnector = "";
+    element.setAttribute("data-from-glyph", fromGlyph.key);
+    element.setAttribute("data-to-glyph", toGlyph.key);
     const dx = to.x - from.x;
     const dy = to.y - from.y;
-    const cp1x = from.x + dx * 0.45;
-    const cp1y = from.y + dy * 0.1;
-    const cp2x = to.x - dx * 0.45;
-    const cp2y = to.y - dy * 0.1;
+    const cp1x = from.x + dx * 0.35;
+    const cp1y = from.y + dy * 0.05;
+    const cp2x = to.x - dx * 0.35;
+    const cp2y = to.y - dy * 0.05;
     element.setAttribute("d", `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`);
     connectorGroup.append(element);
     const length = element.getTotalLength();
@@ -141,7 +152,7 @@ export function initSiteThread() {
     connectorGroup.replaceChildren();
 
     const isMobile = width <= 700;
-    const glyphRecords: GlyphRecord[] = [...document.querySelectorAll<HTMLElement>(".about__glyph[data-glyph-key]")].map((element) => {
+    const rawGlyphs: GlyphRecord[] = [...document.querySelectorAll<HTMLElement>(".about__glyph[data-glyph-key]")].map((element) => {
       const key = element.dataset.glyphKey!;
       const wordIndex = Number(key.split("-")[0]);
       const baseline = document.querySelector<HTMLElement>(`[data-glyph-baseline='${wordIndex}']`)!;
@@ -150,25 +161,49 @@ export function initSiteThread() {
       const originX = box.left + scrollX, baselineY = baselineBox.top + scrollY;
       const glyphPaths = [...glyphSvg.querySelectorAll<SVGPathElement>(`path[data-glyph-key='${key}']`)].sort((a, b) => Number(a.dataset.glyphContour) - Number(b.dataset.glyphContour));
       glyphPaths.forEach((path) => path.setAttribute("transform", `translate(${originX} ${baselineY}) scale(${scale})`));
-      const rawPref = GLYPH_JUNCTION_PREFERENCES[key];
-      const pref: JunctionPreference | undefined = rawPref
-        ? ("mode" in rawPref ? rawPref : (isMobile && rawPref.mobile ? rawPref.mobile : rawPref.desktop ?? rawPref.mobile))
-        : undefined;
       return {
         key,
         left: originX,
         top: box.top + scrollY,
+        baselineY,
         scale,
         paths: glyphPaths,
-        junctions: glyphPaths.map((path, contourIndex) => findJunction(path, originX, baselineY, scale, contourIndex === 0 ? pref : undefined)),
+        junctions: [],
         lineIndex: 0,
       };
     });
     const lines: GlyphRecord[][] = [];
-    [...glyphRecords].sort((a, b) => a.top - b.top || a.left - b.left).forEach((glyph) => { const line = lines.find((items) => Math.abs(items[0]!.top - glyph.top) < 4); line ? line.push(glyph) : lines.push([glyph]); });
+    [...rawGlyphs].sort((a, b) => a.top - b.top || a.left - b.left).forEach((glyph) => { const line = lines.find((items) => Math.abs(items[0]!.top - glyph.top) < 4); line ? line.push(glyph) : lines.push([glyph]); });
     lines.forEach((line, lineIndex) => { line.forEach((glyph) => { glyph.lineIndex = lineIndex; }); line.sort((a, b) => a.left - b.left); if (lineIndex % 2 === 0) line.reverse(); });
     const glyphOrder = lines.flat();
     if (!glyphOrder.length) return;
+
+    glyphOrder.forEach((glyph, i) => {
+      const prev = glyphOrder[i - 1];
+      const next = glyphOrder[i + 1];
+      let pref: AnchorPreference | undefined;
+
+      if (next && glyph.lineIndex === next.lineIndex) {
+        const trans = findTransition(glyph.key, next.key, isMobile);
+        if (trans && trans.visibility === "visible" && trans.fromAnchor) {
+          pref = trans.fromAnchor;
+        }
+      }
+      if (!pref && prev && glyph.lineIndex === prev.lineIndex) {
+        const trans = findTransition(prev.key, glyph.key, isMobile);
+        if (trans && trans.visibility === "visible" && trans.toAnchor) {
+          pref = trans.toAnchor;
+        }
+      }
+      if (!pref) {
+        pref = { mode: "top" };
+      }
+
+      glyph.junctions = glyph.paths.map((path, contourIndex) =>
+        findJunction(path, glyph.left, glyph.baselineY, glyph.scale, contourIndex === 0 ? pref : undefined),
+      );
+    });
+
     const fontSize = Number.parseFloat(getComputedStyle(document.querySelector<HTMLElement>(".about__glyph")!).fontSize);
     const headlineSegments: Segment[] = [];
     glyphOrder.forEach((glyph, glyphIndex) => {
@@ -179,7 +214,11 @@ export function initSiteThread() {
         if (contourIndex > 0) headlineSegments.push({ drawLength: 0, weight: Math.max(18, fontSize * 0.18), startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 });
       });
       const next = glyphOrder[glyphIndex + 1];
-      if (next) headlineSegments.push(createConnector(glyph.junctions[0]!, next.junctions[0]!, glyph.lineIndex === next.lineIndex, fontSize));
+      if (next) {
+        const sameLine = glyph.lineIndex === next.lineIndex;
+        const trans = sameLine ? findTransition(glyph.key, next.key, isMobile) : undefined;
+        headlineSegments.push(createConnector(glyph, next, glyph.junctions[0]!, next.junctions[0]!, sameLine, fontSize, trans));
+      }
     });
 
     const first = glyphOrder[0]!.junctions[0]!, last = glyphOrder.at(-1)!.junctions[0]!;

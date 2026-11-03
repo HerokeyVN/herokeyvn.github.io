@@ -17,29 +17,82 @@ export const ABOUT_GLYPH_INSTANCES = ABOUT_TRACE_WORDS.flatMap((word, wordIndex)
   [...word].map((char, charIndex) => ({ key: `${wordIndex}-${charIndex}`, char, contours: ABOUT_GLYPHS[char]!.contours })),
 );
 
-export type JunctionPreference = {
+export type AnchorPreference = {
   mode: "top" | "right" | "bottom" | "left" | "fraction";
   fraction?: number;
 };
 
-export type GlyphRouteOverride = {
-  desktop?: JunctionPreference;
-  mobile?: JunctionPreference;
+export type JunctionPreference = AnchorPreference;
+
+export type GlyphTransition = {
+  from: string;
+  to: string;
+  visibility: "visible" | "hidden";
+  fromAnchor?: AnchorPreference;
+  toAnchor?: AnchorPreference;
+  desktop?: boolean;
+  mobile?: boolean;
 };
 
-export const GLYPH_JUNCTION_PREFERENCES: Record<string, JunctionPreference | GlyphRouteOverride> = {
-  "0-0": { mode: "top" },
-  "0-1": { mode: "bottom" },
-  "0-2": { mode: "top" },
-  "0-3": { mode: "bottom" },
-  "0-4": { mode: "top" },
-  "1-0": { mode: "bottom" },
-  "1-1": { mode: "top" },
-  "1-2": { mode: "bottom" },
-  "1-3": { mode: "bottom" },
-  "1-4": { mode: "top" },
-  "2-0": { mode: "bottom" },
-  "2-1": { mode: "top" },
-  "2-2": { mode: "bottom" },
-  "2-3": { mode: "top" },
-};
+export const GLYPH_TRANSITIONS: GlyphTransition[] = [
+  // Pair 1 in USERS: R (0-3) -> E (0-2) across the inter-letter gap
+  {
+    from: "0-3",
+    to: "0-2",
+    visibility: "visible",
+    fromAnchor: { mode: "fraction", fraction: 8 / 120 },  // R left spine at y ~ -80
+    toAnchor: { mode: "fraction", fraction: 30 / 120 },   // E bottom arm right edge at y ~ -84.5
+    desktop: true,
+    mobile: true,
+  },
+  // Pair 2 in DON'T:
+  // Desktop RTL: N (1-2) -> O (1-1)
+  {
+    from: "1-2",
+    to: "1-1",
+    visibility: "visible",
+    fromAnchor: { mode: "fraction", fraction: 107 / 120 }, // N left spine at y ~ -334
+    toAnchor: { mode: "fraction", fraction: 90 / 120 },    // O right belly at y ~ -323
+    desktop: true,
+    mobile: false,
+  },
+  // Mobile LTR: O (1-1) -> N (1-2)
+  {
+    from: "1-1",
+    to: "1-2",
+    visibility: "visible",
+    fromAnchor: { mode: "fraction", fraction: 90 / 120 },   // O right belly at y ~ -323
+    toAnchor: { mode: "fraction", fraction: 107 / 120 },   // N left spine at y ~ -334
+    desktop: false,
+    mobile: true,
+  },
+  // Pair 3 in SEE.: E1 (2-1) -> E2 (2-2) across the double-E gap
+  {
+    from: "2-1",
+    to: "2-2",
+    visibility: "visible",
+    fromAnchor: { mode: "fraction", fraction: 30 / 120 },  // E1 bottom arm right edge at y ~ -84.5
+    toAnchor: { mode: "fraction", fraction: 52 / 120 },   // E2 left spine at y ~ -84.67
+    desktop: true,
+    mobile: true,
+  },
+  // Single-line desktop RTL fallback for SEE.: E2 (2-2) -> E1 (2-1)
+  {
+    from: "2-2",
+    to: "2-1",
+    visibility: "visible",
+    fromAnchor: { mode: "fraction", fraction: 52 / 120 }, // E2 left spine at y ~ -84.67
+    toAnchor: { mode: "fraction", fraction: 30 / 120 },   // E1 bottom arm right edge at y ~ -84.5
+    desktop: true,
+    mobile: false,
+  },
+];
+
+export function findTransition(fromKey: string, toKey: string, isMobile: boolean): GlyphTransition | undefined {
+  return GLYPH_TRANSITIONS.find((t) => {
+    if (t.from !== fromKey || t.to !== toKey) return false;
+    if (isMobile && t.mobile === false) return false;
+    if (!isMobile && t.desktop === false) return false;
+    return true;
+  });
+}
