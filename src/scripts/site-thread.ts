@@ -2,7 +2,17 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { findTransition, type AnchorPreference, type GlyphTransition } from "../data/about-glyphs";
 
-type Segment = { element?: SVGPathElement; drawLength: number; weight: number; startDistance: number; kind: "open" | "closed" | "hidden"; layer: "site" | "glyph"; startScroll: number; endScroll: number };
+type Segment = {
+  element?: SVGPathElement;
+  drawLength: number;
+  weight: number;
+  startDistance: number;
+  kind: "open" | "closed" | "hidden";
+  layer: "site" | "glyph";
+  startScroll: number;
+  endScroll: number;
+  hideAfterScroll?: number;
+};
 type Junction = { x: number; y: number; distance: number };
 type GlyphRecord = { key: string; left: number; top: number; baselineY: number; scale: number; paths: SVGPathElement[]; junctions: Junction[]; lineIndex: number };
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -21,6 +31,12 @@ export function initSiteThread() {
   let segments: Segment[] = [];
   let resizeFrame = 0;
   let trigger: ScrollTrigger | undefined;
+  let s0 = 0;
+  let sHandoffEnd = 0;
+  let sOccluded = 0;
+  let sGlyphStart = 0;
+  let s2 = 0;
+
   const topOf = (selector: string) => { const el = document.querySelector<HTMLElement>(selector); return el ? el.getBoundingClientRect().top + scrollY : 0; };
   const botOf = (selector: string) => { const el = document.querySelector<HTMLElement>(selector); return el ? el.getBoundingClientRect().bottom + scrollY : 0; };
   const setTiming = (segment: Segment, start: number, end: number) => { segment.startScroll = start; segment.endScroll = Math.max(start + 1, end); };
@@ -38,21 +54,55 @@ export function initSiteThread() {
     if (reduceMotion.matches) {
       segments.forEach(({ element }) => element && gsap.set(element, { strokeDasharray: "none", strokeDashoffset: 0, visibility: "visible" }));
       gsap.set([siteEnd, glyphEnd], { autoAlpha: 0 });
+      svg.setAttribute("data-thread-phase", "glyph");
       return;
     }
+
+    // Diagnostic phase contract: hero | handoff | hidden | glyph
+    let phase: "hero" | "handoff" | "hidden" | "glyph" = "hero";
+    if (currentScroll >= sGlyphStart) {
+      phase = "glyph";
+    } else if (currentScroll >= sOccluded) {
+      phase = "hidden";
+    } else if (currentScroll > s0) {
+      phase = "handoff";
+    } else {
+      phase = "hero";
+    }
+    svg.setAttribute("data-thread-phase", phase);
+
     let active: { segment: Segment; progress: number } | undefined;
     segments.forEach((segment) => {
       const progress = gsap.utils.clamp(0, 1, (currentScroll - segment.startScroll) / (segment.endScroll - segment.startScroll));
       if (progress > 0 && progress < 1) active = { segment, progress };
       if (!segment.element) return;
+
+      // Explicit lifecycle: hide handoff once fully occluded by the compact header
+      if (typeof segment.hideAfterScroll === "number" && currentScroll >= segment.hideAfterScroll) {
+        gsap.set(segment.element, { visibility: "hidden" });
+        return;
+      }
+
       const visible = segment.drawLength * progress;
       if (segment.kind === "closed") {
-        gsap.set(segment.element, { strokeDasharray: progress >= 1 ? "none" : `${visible} ${Math.max(0.01, segment.drawLength - visible)}`, strokeDashoffset: -segment.startDistance, visibility: progress > 0 ? "visible" : "hidden" });
+        gsap.set(segment.element, {
+          strokeDasharray: progress >= 1 ? "none" : `${visible} ${Math.max(0.01, segment.drawLength - visible)}`,
+          strokeDashoffset: -segment.startDistance,
+          visibility: progress > 0 ? "visible" : "hidden",
+        });
       } else {
-        gsap.set(segment.element, { strokeDasharray: `${segment.drawLength} ${segment.drawLength}`, strokeDashoffset: segment.drawLength - visible, visibility: progress > 0 ? "visible" : "hidden" });
+        gsap.set(segment.element, {
+          strokeDasharray: `${segment.drawLength} ${segment.drawLength}`,
+          strokeDashoffset: segment.drawLength - visible,
+          visibility: progress > 0 ? "visible" : "hidden",
+        });
       }
     });
-    if (!active || active.segment.kind === "hidden" || !active.segment.element) { gsap.set([siteEnd, glyphEnd], { autoAlpha: 0 }); return; }
+
+    if (!active || active.segment.kind === "hidden" || !active.segment.element || phase === "hidden") {
+      gsap.set([siteEnd, glyphEnd], { autoAlpha: 0 });
+      return;
+    }
     const { segment, progress } = active;
     const element = segment.element!;
     const distance = segment.kind === "closed" ? (segment.startDistance + segment.drawLength * progress) % segment.drawLength : segment.drawLength * progress;
@@ -240,12 +290,14 @@ export function initSiteThread() {
       }
     }
 
-    const targetL = Math.min(170, width * 0.14);
-    const dx = isMobile ? -Math.min(15, width * 0.025) : Math.min(30, width * 0.025);
-    const dy = Math.sqrt(Math.max(100, targetL * targetL - dx * dx));
-    const cp1x = startX + dx * 0.25;
+    const targetL = isMobile
+      ? Math.min(42, Math.max(34, width * 0.09))
+      : Math.min(60, Math.max(50, width * 0.04));
+    const dx = isMobile ? -Math.round(targetL / 2.45) : Math.round(targetL / 2.45);
+    const dy = Math.round(Math.abs(dx) * 2.18);
+    const cp1x = startX + dx * 0.35;
     const cp1y = startY + dy * 0.45;
-    const cp2x = startX + dx * 0.8;
+    const cp2x = startX + dx * 0.75;
     const cp2y = startY + dy * 0.85;
     const endX = startX + dx;
     const endY = startY + dy;
@@ -262,9 +314,44 @@ export function initSiteThread() {
       `M ${edge} ${skillsTop} C ${edge * 0.6} ${skillsTop + (contactTop - skillsTop) * 0.3}, ${edge * 0.6} ${skillsTop + (contactTop - skillsTop) * 0.7}, ${edge} ${contactTop}`,
       `M ${edge} ${contactTop} C ${edge} ${contactTop + 100}, ${contactTargetX - 60} ${contactTargetY - 40}, ${contactTargetX} ${contactTargetY}`,
     ];
-    const siteSegments = paths.map((element, index) => { element.setAttribute("d", pathData[index]!); const length = element.getTotalLength(); return { element, drawLength: length, weight: length, startDistance: 0, kind: "open", layer: "site", startScroll: 0, endScroll: 1 } satisfies Segment; });
-    const s0 = Math.round(heroHeight * 0.55), s1 = Math.max(s0 + 80, Math.round(first.y - winHeight * 0.72));
-    const sHandoffEnd = s0 + Math.max(30, Math.round((s1 - s0) * 0.45));
+    const siteSegments: Segment[] = paths.map((element, index) => {
+      element.setAttribute("d", pathData[index]!);
+      const length = element.getTotalLength();
+      return {
+        element,
+        drawLength: length,
+        weight: length,
+        startDistance: 0,
+        kind: "open",
+        layer: "site",
+        startScroll: 0,
+        endScroll: 1,
+        hideAfterScroll: undefined,
+      };
+    });
+
+    const headerEl = document.querySelector<HTMLElement>("[data-site-header]");
+    let headerHeight = 60;
+    if (headerEl) {
+      const wasCompact = headerEl.hasAttribute("data-compact");
+      const prevTransition = headerEl.style.transition;
+      headerEl.style.transition = "none";
+      headerEl.setAttribute("data-compact", "");
+      headerHeight = headerEl.offsetHeight;
+      headerEl.style.transition = prevTransition;
+      if (!wasCompact) headerEl.removeAttribute("data-compact");
+    }
+    const handoffBottom = endY;
+
+    s0 = Math.round(heroHeight * 0.55);
+    sHandoffEnd = s0 + (isMobile ? 35 : 50);
+    sOccluded = Math.ceil(handoffBottom - headerHeight);
+    sGlyphStart = Math.max(sOccluded + (isMobile ? 65 : 85), Math.round(first.y - winHeight * 0.72));
+    const s1 = sGlyphStart;
+
+    siteSegments[0]!.hideAfterScroll = sOccluded;
+    setTiming(siteSegments[0]!, s0, sHandoffEnd);
+
     const handoffHiddenSegment: Segment = {
       drawLength: 0,
       weight: Math.max(50, fontSize * 0.8),
@@ -274,10 +361,10 @@ export function initSiteThread() {
       startScroll: 0,
       endScroll: 1,
     };
-    const s2 = Math.max(s1 + Math.max(480, winHeight * 0.62), Math.round(last.y - winHeight * 0.34));
+    setTiming(handoffHiddenSegment, sOccluded, sGlyphStart);
+
+    s2 = Math.max(s1 + Math.max(480, winHeight * 0.62), Math.round(last.y - winHeight * 0.34));
     const s3 = Math.max(s2 + 160, Math.round(expTop - winHeight * 0.55)), s4 = Math.max(s3 + 60, Math.round(projTop - winHeight * 0.55)), s5 = Math.max(s4 + 60, Math.round(skillsTop - winHeight * 0.55)), s6 = Math.max(s5 + 60, Math.round(contactTop - winHeight * 0.55)), s7 = Math.max(s6 + 60, height - winHeight);
-    setTiming(siteSegments[0]!, s0, sHandoffEnd);
-    setTiming(handoffHiddenSegment, sHandoffEnd, s1);
     const headlineWeight = headlineSegments.reduce((sum, segment) => sum + segment.weight, 0); let cursor = s1;
     headlineSegments.forEach((segment) => { const end = cursor + (s2 - s1) * segment.weight / headlineWeight; setTiming(segment, cursor, end); cursor = end; });
     setTiming(siteSegments[1]!, s2, s3); setTiming(siteSegments[2]!, s3, s4); setTiming(siteSegments[3]!, s4, s5); setTiming(siteSegments[4]!, s5, s6); setTiming(siteSegments[5]!, s6, s7);

@@ -66,11 +66,11 @@ export function initHeroThread() {
 
       measure();
 
-      const entrance = { progress: 0 };
+      const initialFraction = 0.35;
       let scrollProgress = 0;
 
       const render = () => {
-        const effectiveProgress = Math.min(1, Math.max(entrance.progress, 0.35 + scrollProgress * 0.65));
+        const effectiveProgress = Math.min(1, Math.max(initialFraction, initialFraction + scrollProgress * (1 - initialFraction)));
         let remaining = totalLength * effectiveProgress;
 
         segments.forEach(({ element, screenLength }) => {
@@ -79,71 +79,50 @@ export function initHeroThread() {
 
           if (segProgress >= 1) {
             // Completion invariant: remove dash pattern so stretch transforms never clip tail
-            gsap.set(element, {
-              strokeDasharray: "none",
-              strokeDashoffset: 0,
-              visibility: "visible",
-            });
+            element.style.strokeDasharray = "none";
+            element.style.strokeDashoffset = "0";
+            element.style.visibility = "visible";
           } else if (segProgress > 0) {
-            gsap.set(element, {
-              strokeDasharray: "1 1",
-              strokeDashoffset: 1 - segProgress,
-              visibility: "visible",
-            });
+            element.style.strokeDasharray = "1 1";
+            element.style.strokeDashoffset = String(1 - segProgress);
+            element.style.visibility = "visible";
           } else {
-            gsap.set(element, {
-              strokeDasharray: "1 1",
-              strokeDashoffset: 1,
-              visibility: "hidden",
-            });
+            element.style.strokeDasharray = "1 1";
+            element.style.strokeDashoffset = "1";
+            element.style.visibility = "hidden";
           }
         });
       };
 
-      render();
-      const entranceTween = gsap.to(entrance, {
-        progress: 0.35,
-        duration: 1.2,
-        delay: 0.3,
-        ease: "power2.out",
-        onUpdate: render,
-      });
-
       const heroExitScroll = () => Math.round(hero.offsetHeight * 0.55);
+
+      const onScroll = () => {
+        const maxScroll = heroExitScroll();
+        scrollProgress = Math.min(1, Math.max(0, window.scrollY / (maxScroll || 1)));
+        render();
+      };
 
       const trigger = ScrollTrigger.create({
         trigger: hero,
         start: "top top",
-        end: () => `${heroExitScroll()} top`,
+        end: () => `+=${heroExitScroll()}`,
         scrub: true,
-        onUpdate: (self) => {
-          if (self.progress > 0 && entranceTween.isActive()) {
-            entrance.progress = Math.max(entrance.progress, 0.35);
-          }
-          scrollProgress = self.progress;
-          render();
-        },
+        invalidateOnRefresh: true,
+        onUpdate: onScroll,
       });
-
-      const onScroll = () => {
-        if (window.scrollY > 0 && entranceTween.isActive()) {
-          entrance.progress = Math.max(entrance.progress, 0.35);
-        }
-        const maxScroll = heroExitScroll();
-        scrollProgress = Math.min(1, Math.max(0, window.scrollY / maxScroll));
-        render();
-      };
 
       const onResize = () => {
         measure();
-        render();
+        onScroll();
       };
+
+      measure();
+      onScroll();
 
       window.addEventListener("scroll", onScroll, { passive: true });
       window.addEventListener("resize", onResize, { passive: true });
 
       return () => {
-        entranceTween.kill();
         trigger.kill();
         window.removeEventListener("scroll", onScroll);
         window.removeEventListener("resize", onResize);
