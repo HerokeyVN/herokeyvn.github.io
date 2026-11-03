@@ -274,11 +274,7 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
     const distanceToAnyOutline = (point: DOMPoint | SVGPoint) =>
       Math.min(...allSamples.map((sample) => Math.hypot(point.x - sample.x, point.y - sample.y)));
 
-    const globalJunctions = [
-      screenPoint(sitePaths[0]!, sitePaths[0]!.getTotalLength()),
-      screenPoint(sitePaths[1]!, 0),
-    ];
-    const globalJunctionError = Math.max(...globalJunctions.map(distanceToAnyOutline));
+    const glyphExitJunctionError = distanceToAnyOutline(screenPoint(sitePaths[1]!, 0));
 
     return {
       glyphCount: document.querySelectorAll(".about__glyph").length,
@@ -287,7 +283,7 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
       connectorCount: connectors.length,
       zeroLengthPaths: [...outerContours, ...connectors, ...sitePaths].filter((path) => path.getTotalLength() <= 0).length,
       connectorDetails,
-      globalJunctionError,
+      glyphExitJunctionError,
     };
   });
 
@@ -296,7 +292,7 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
   expect(continuity.zeroLengthPaths).toBe(0);
   expect(continuity.connectorCount).toBeGreaterThanOrEqual(2);
   expect(continuity.connectorCount).toBeLessThanOrEqual(4);
-  expect(continuity.globalJunctionError).toBeLessThan(0.75);
+  expect(continuity.glyphExitJunctionError).toBeLessThan(0.75);
 
   for (const detail of continuity.connectorDetails) {
     expect(detail.fromKey).toBeTruthy();
@@ -497,4 +493,298 @@ test("synchronizes the full glyph trace with scroll position and reverses cleanl
     paths.filter((path) => (path as SVGPathElement).style.visibility !== "hidden").length,
   );
   expect(visibleAtTop).toBe(0);
+});
+
+test("hero draw progress maintains completion invariant across responsive viewports", async ({ page }) => {
+  const viewports = [
+    { width: 1920, height: 927 },
+    { width: 1440, height: 900 },
+    { width: 1024, height: 768 },
+    { width: 701, height: 800 },
+    { width: 700, height: 800 },
+    { width: 601, height: 800 },
+    { width: 600, height: 800 },
+    { width: 576, height: 800 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
+
+    await page.evaluate(() => {
+      const hero = document.getElementById("top") || document.querySelector(".hero");
+      const heroH = hero ? hero.getBoundingClientRect().height : window.innerHeight;
+      window.scrollTo({ top: heroH * 0.55, behavior: "instant" });
+    });
+
+    await page.waitForFunction(() => {
+      const isMobile = window.innerWidth <= 700;
+      const p0 = document.querySelector<SVGPathElement>(isMobile ? "[data-thread-segment-mobile='0']" : "[data-thread-segment='0']");
+      const p1 = document.querySelector<SVGPathElement>(isMobile ? "[data-thread-segment-mobile='1']" : "[data-thread-segment='1']");
+      return p0 && p1 && p0.style.strokeDasharray === "none" && p1.style.strokeDasharray === "none";
+    });
+
+    const check = await page.evaluate(() => {
+      const isMobile = window.innerWidth <= 700;
+      const activeSelector = isMobile ? "[data-thread-segment-mobile]" : "[data-thread-segment]";
+      const activeSvgs = isMobile
+        ? [...document.querySelectorAll(".hero-thread--mobile")]
+        : [...document.querySelectorAll(".hero-thread--desktop")];
+      const inactiveSvgs = isMobile
+        ? [...document.querySelectorAll(".hero-thread--desktop")]
+        : [...document.querySelectorAll(".hero-thread--mobile")];
+
+      const activeSvgsDisplayed = activeSvgs.every((svg) => getComputedStyle(svg).display !== "none");
+      const inactiveSvgsHidden = inactiveSvgs.every((svg) => getComputedStyle(svg).display === "none");
+
+      const rawActive = [...document.querySelectorAll<SVGPathElement>(activeSelector)];
+      const activePaths = rawActive.sort((a, b) => {
+        const idxA = Number(a.dataset.threadSegment || a.dataset.threadSegmentMobile || 0);
+        const idxB = Number(b.dataset.threadSegment || b.dataset.threadSegmentMobile || 0);
+        return idxA - idxB;
+      });
+
+      const p0 = activePaths[0]!;
+      const p1 = activePaths[1]!;
+      const p2 = activePaths[2]!;
+
+      const p0Dash = p0.style.strokeDasharray;
+      const p1Dash = p1.style.strokeDasharray;
+      const p0Offset = Number.parseFloat(p0.style.strokeDashoffset || "0");
+      const p1Offset = Number.parseFloat(p1.style.strokeDashoffset || "0");
+      const dashSafe = p0Dash === "none" && p1Dash === "none" && p0Offset === 0 && p1Offset === 0;
+
+      const transformPoint = (path: SVGPathElement, pt: DOMPoint | SVGPoint) => {
+        const m = path.getScreenCTM();
+        if (!m) return { x: pt.x, y: pt.y };
+        return {
+          x: pt.x * m.a + pt.y * m.c + m.e,
+          y: pt.x * m.b + pt.y * m.d + m.f,
+        };
+      };
+
+      const p0End = transformPoint(p0, p0.getPointAtLength(p0.getTotalLength()));
+      const p1Start = transformPoint(p1, p1.getPointAtLength(0));
+      const p1End = transformPoint(p1, p1.getPointAtLength(p1.getTotalLength()));
+      const p2Start = transformPoint(p2, p2.getPointAtLength(0));
+
+      const d01 = Math.hypot(p0End.x - p1Start.x, p0End.y - p1Start.y);
+      const d12 = Math.hypot(p1End.x - p2Start.x, p1End.y - p2Start.y);
+
+      const nonZeroBoxes = activePaths.every((p) => {
+        const box = p.getBoundingClientRect();
+        return box.width > 0 && box.height > 0;
+      });
+
+      return {
+        activeSvgsDisplayed,
+        inactiveSvgsHidden,
+        dashSafe,
+        d01,
+        d12,
+        nonZeroBoxes,
+      };
+    });
+
+    expect(check.activeSvgsDisplayed).toBe(true);
+    expect(check.inactiveSvgsHidden).toBe(true);
+    expect(check.dashSafe).toBe(true);
+    expect(check.d01).toBeLessThanOrEqual(1.0);
+    expect(check.d12).toBeLessThanOrEqual(1.0);
+    expect(check.nonZeroBoxes).toBe(true);
+
+    const p2OffsetBefore = await page.evaluate(() => {
+      const isMobile = window.innerWidth <= 700;
+      const p2 = document.querySelector<SVGPathElement>(isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']")!;
+      return Number.parseFloat(p2.style.strokeDashoffset || "0");
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+    const p2OffsetAfter = await page.evaluate(() => {
+      const isMobile = window.innerWidth <= 700;
+      const p2 = document.querySelector<SVGPathElement>(isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']")!;
+      return Number.parseFloat(p2.style.strokeDashoffset || "0");
+    });
+    expect(Math.abs(p2OffsetBefore - p2OffsetAfter)).toBeLessThan(0.005);
+  }
+});
+
+test("boundary handoff meets hero exit and respects negative-space corridor", async ({ page }) => {
+  const viewports = [
+    { width: 1920, height: 927 },
+    { width: 1440, height: 900 },
+    { width: 700, height: 800 },
+    { width: 576, height: 800 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForFunction(() => {
+      const p0 = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']");
+      return p0 && p0.getTotalLength() > 0;
+    });
+
+    const handoffCheck = await page.evaluate(() => {
+      const isMobile = window.innerWidth <= 700;
+      const heroExit = document.querySelector<SVGPathElement>(
+        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
+      )!;
+      const heroEndLocal = heroExit.getPointAtLength(heroExit.getTotalLength());
+      const m = heroExit.getScreenCTM()!;
+      const heroEnd = {
+        x: heroEndLocal.x * m.a + heroEndLocal.y * m.c + m.e,
+        y: heroEndLocal.x * m.b + heroEndLocal.y * m.d + m.f + window.scrollY,
+      };
+
+      const handoffPath = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']")!;
+      const handoffStart = handoffPath.getPointAtLength(0);
+      const heroHandoffDist = Math.hypot(heroEnd.x - handoffStart.x, heroEnd.y - handoffStart.y);
+
+      const length = handoffPath.getTotalLength();
+      let sampledLen = 0;
+      let prev = handoffPath.getPointAtLength(0);
+      const samples = 40;
+      for (let i = 1; i <= samples; i++) {
+        const curr = handoffPath.getPointAtLength((length * i) / samples);
+        sampledLen += Math.hypot(curr.x - prev.x, curr.y - prev.y);
+        prev = curr;
+      }
+
+      const box = handoffPath.getBoundingClientRect();
+      const inNegativeSpace = box.left > window.innerWidth * 0.45 && box.right <= window.innerWidth + 2;
+
+      return {
+        heroHandoffDist,
+        sampledLen,
+        inNegativeSpace,
+        box,
+      };
+    });
+
+    expect(handoffCheck.heroHandoffDist).toBeLessThanOrEqual(1.0);
+    const maxAllowedLen = Math.min(220, vp.width * 0.18) + 2;
+    expect(handoffCheck.sampledLen).toBeLessThanOrEqual(maxAllowedLen);
+    expect(handoffCheck.inNegativeSpace).toBe(true);
+
+    const heroH = await page.evaluate(() => {
+      const hero = document.getElementById("top") || document.querySelector(".hero");
+      return hero ? hero.getBoundingClientRect().height : window.innerHeight;
+    });
+
+    const hiddenInfo = await page.evaluate((h) => {
+      const firstGlyph = document.querySelector<HTMLElement>(".about__glyph");
+      const firstY = firstGlyph ? firstGlyph.getBoundingClientRect().top + window.scrollY : h + 200;
+      const s0 = Math.round(h * 0.55);
+      const s1 = Math.max(s0 + 80, Math.round(firstY - window.innerHeight * 0.72));
+      const sHandoffEnd = s0 + Math.max(30, Math.round((s1 - s0) * 0.45));
+      const midHidden = Math.round((sHandoffEnd + s1) / 2);
+      window.scrollTo({ top: midHidden, behavior: "instant" });
+      window.dispatchEvent(new Event("scroll"));
+
+      const siteEnd = document.querySelector<SVGElement>("[data-site-thread-end]");
+      const glyphEnd = document.querySelector<SVGElement>("[data-glyph-thread-end]");
+      const siteEndHidden = !siteEnd || getComputedStyle(siteEnd).opacity === "0" || getComputedStyle(siteEnd).visibility === "hidden";
+      const glyphEndHidden = !glyphEnd || getComputedStyle(glyphEnd).opacity === "0" || getComputedStyle(glyphEnd).visibility === "hidden";
+
+      return {
+        s0,
+        s1,
+        sHandoffEnd,
+        midHidden,
+        siteEndHidden,
+        glyphEndHidden,
+      };
+    }, heroH);
+
+    expect(hiddenInfo.s1 - hiddenInfo.sHandoffEnd).toBeGreaterThan(0);
+    expect(hiddenInfo.siteEndHidden).toBe(true);
+    expect(hiddenInfo.glyphEndHidden).toBe(true);
+
+    const collisions = await page.evaluate(() => {
+      const handoffPath = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']")!;
+      const protectedElements = [...document.querySelectorAll<HTMLElement>("p, a, button, nav, .initiative-card, .skill-row, .education")]
+        .filter((element) => !element.closest("#top") && !element.closest(".site-header"));
+      const boxes = protectedElements.map((element) => {
+        const box = element.getBoundingClientRect();
+        return {
+          left: box.left - 6,
+          right: box.right + 6,
+          top: box.top + scrollY - 6,
+          bottom: box.bottom + scrollY + 6,
+        };
+      });
+      const hits: number[] = [];
+      const length = handoffPath.getTotalLength();
+      for (let distance = 0; distance <= length; distance += 4) {
+        const point = handoffPath.getPointAtLength(distance);
+        if (boxes.some((box) => point.x > box.left && point.x < box.right && point.y > box.top && point.y < box.bottom)) {
+          hits.push(distance);
+        }
+      }
+      return hits;
+    });
+    expect(collisions).toEqual([]);
+  }
+});
+
+test("responsive threshold transitions rebuild cleanly without errors", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.setViewportSize({ width: 701, height: 800 });
+  await page.goto("/");
+  await page.waitForLoadState("domcontentloaded");
+
+  await page.evaluate(() => {
+    const hero = document.getElementById("top") || document.querySelector(".hero");
+    const heroH = hero ? hero.getBoundingClientRect().height : 800;
+    window.scrollTo({ top: heroH * 0.4, behavior: "instant" });
+  });
+
+  const widths = [701, 700, 601, 600, 701];
+
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 50))));
+
+    const state = await page.evaluate(() => {
+      const isMobile = window.innerWidth <= 700;
+      const activeSvgs = isMobile
+        ? [...document.querySelectorAll(".hero-thread--mobile")]
+        : [...document.querySelectorAll(".hero-thread--desktop")];
+      const inactiveSvgs = isMobile
+        ? [...document.querySelectorAll(".hero-thread--desktop")]
+        : [...document.querySelectorAll(".hero-thread--mobile")];
+
+      const noHorizontalOverflow = document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1;
+      const activeDisplayed = activeSvgs.every((svg) => getComputedStyle(svg).display !== "none");
+      const inactiveHidden = inactiveSvgs.every((svg) => getComputedStyle(svg).display === "none");
+
+      const activePaths = isMobile
+        ? [...document.querySelectorAll<SVGPathElement>("[data-thread-segment-mobile]")]
+        : [...document.querySelectorAll<SVGPathElement>("[data-thread-segment]")];
+      const allPathsRendered = activePaths.every((p) => p.getBoundingClientRect().width > 0);
+
+      return {
+        noHorizontalOverflow,
+        activeDisplayed,
+        inactiveHidden,
+        allPathsRendered,
+      };
+    });
+
+    expect(state.noHorizontalOverflow).toBe(true);
+    expect(state.activeDisplayed).toBe(true);
+    expect(state.inactiveHidden).toBe(true);
+    expect(state.allPathsRendered).toBe(true);
+  }
+
+  expect(errors).toEqual([]);
 });
