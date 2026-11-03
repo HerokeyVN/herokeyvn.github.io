@@ -1,11 +1,63 @@
 # Full glyph-trace and responsive thread validation
 
-> **Review Round 4 Approved**: Fully verified responsive narrative-thread continuity across the entire review matrix (1920×927, 1440×900, 701×800, 700×800, 576×800, and 390×844). Hero completion invariant, boundary handoff contract, and unified 700px responsive ownership are fully operational. See `docs/review-round-4-responsive-work-order.md`.
+> **Review Round 5 Completed & Verified**: Repaired temporal continuity and handoff lifecycle per `docs/review-round-5-motion-work-order.md`. Decoupled handoff persistence via runtime occlusion scheduling, tightened handoff geometry ($L \le \min(72\text{px}, 12vw)$, $dy/dx \le 2.5$), eliminated dead Hero entrance tween, verified bidirectional lifecycle sampling (A → B → C → D and reverse), and generated forward/reverse motion video evidence. Full suite passes with 38/38 tests.
 
-Build: `feat/portfolio-redesign` review round 4 responsive continuity repair
+Build: `feat/portfolio-redesign` review round 5 temporal continuity repair
 Date: 2026-11-04
 
-## Round 4 Responsive Verification Matrix
+## Round 5 Motion Evidence Matrix
+
+### Video Recordings
+
+Recordings are captured with Playwright browser video under normal motion:
+
+| File | Viewport | Direction & Content | Sequence Timestamps | Result |
+|---|---:|---|---|---|
+| `round-5-1920x927-lifecycle.webm` | 1920×927 | Forward A→D, pause in C, reverse D→A | 00:00–00:01 (A: Hero tail), 00:01–00:02 (B: seam handoff), 00:02–00:03 (C: hidden travel pause), 00:03–00:04 (D: glyph trace active), 00:04–00:06 (reverse D→C→B→A) | PASS |
+| `round-5-390x844-lifecycle.webm` | 390×844 | Mobile forward A→D, pause in C, reverse D→A | 00:00–00:01 (A: Mobile Hero tail), 00:01–00:02 (B: Mobile handoff), 00:02–00:03 (C: hidden travel pause), 00:03–00:04 (D: glyph active), 00:04–00:06 (reverse D→A) | PASS |
+| `round-5-701-to-700-resize.webm` | 701×800 → 700×800 | Stopped in Phase C, live viewport resize across 700px threshold, then forward D and reverse A | 00:00–00:01 (scroll to C at 701px), 00:01–00:02 (live resize to 700px stopped in C), 00:02–00:03 (forward into D), 00:03–00:05 (reverse back to A) | PASS |
+
+### Phase Extraction Frames (Round 5)
+
+Stored in `design-explorations/screenshots/glyph-trace/round-5/`:
+
+- `round-5-1920-phase-A.png`: Hero drawing reaches section seam; site handoff not started (`visibility: hidden`).
+- `round-5-1920-phase-B.png`: Short, attached handoff ($L \approx 57\text{px}$) draws into right negative space; zero kicker collision.
+- `round-5-1920-phase-C.png`: Handoff fully occluded behind compact header band (`visibility: hidden`); both endpoint markers hidden (`autoAlpha: 0`).
+- `round-5-1920-phase-D.png`: First glyph contour actively drawing (`USERS DON'T SEE.`); handoff remains completely hidden; zero orphaned strokes.
+- `round-5-390-phase-A.png`: Mobile Hero tail reaches seam cleanly.
+- `round-5-390-phase-B.png`: Mobile handoff ($L \approx 38\text{px}$) attaches to mobile Hero exit and draws into negative space.
+- `round-5-390-phase-C.png`: Mobile handoff fully hidden under compact header; markers hidden.
+- `round-5-390-phase-D.png`: Mobile glyph trace initiates at first letter junction; zero stray connector artifacts.
+
+## Round 5 Lifecycle & Continuity Fixes Verified
+
+1. **Decoupled Handoff Lifecycle by Occlusion**:
+   - Replaced open-ended persistent rendering with an explicit visibility lifecycle (`hideAfterScroll: sOccluded`).
+   - Derived occlusion threshold directly from runtime geometry: `sOccluded = Math.ceil(handoffBottom - headerHeight)`.
+   - Once the handoff's entire bounding box enters the opaque compact header band, `visibility: hidden` is applied immediately.
+   - Inserted non-zero hidden travel buffer (Phase C: 85px on desktop, 65px on mobile) before Phase D begins, ensuring Phase B and Phase D never visually overlap.
+
+2. **Tightened & Shallow Handoff Geometry**:
+   - Reduced maximum length from `min(220px, 18vw)` down to `min(72px, 12vw)`:
+     - Desktop: $L \approx 57\text{px}$ ($dx = 24, dy = 52, dy/dx = 2.17 \le 2.5$).
+     - Mobile: $L \approx 38\text{px}$ ($dx = -16, dy = 35, dy/|dx| = 2.19 \le 2.5$).
+   - Eliminated the former vertical cable appearance; handoff now reads as an intentional, shallow seam continuation.
+   - `.about__kicker` styled with `width: fit-content; margin-inline: auto;`, eliminating bounding box bleed and collision with the handoff corridor.
+
+3. **Deterministic Hero Initial State**:
+   - Removed no-op `entranceTween` and established an intentional static resting state at progress 0.35 on initial page load.
+   - Tied Hero thread drawing directly to `window.scrollY` as the single authoritative progress source, eliminating scroll lag and race conditions.
+   - Fully deterministic across direct anchor navigation (`#about` → `#top`) and page reload.
+
+4. **Automated Lifecycle & Occlusion Test Suite (38/38 Passing)**:
+   - Added 3 comprehensive Round 5 tests in `tests/portfolio.spec.ts`:
+     1. `enforces continuous lifecycle A -> B -> C -> D and reversible symmetry` (samples every 8px forward and reverse across 1920×927, 1440×900, 700×800, 576×800, and 390×844).
+     2. `guarantees handoff is fully occluded before hiding` (verifies bounding box is within/above compact header band immediately before and at `sOccluded`).
+     3. `initial hero state renders statically and deterministically without dead tweens` (verifies static 0.35 resting state, absence of idle tweening, and determinism after navigation and reload).
+   - Test count expanded from 32 to 38 tests (19 desktop, 19 mobile).
+
+## Round 4 Responsive Verification Matrix (Preserved & Re-verified)
 
 | Viewport | Frame / State | scrollY | Image | Result | Notes |
 |---:|---|---:|---|---|---|
@@ -73,12 +125,12 @@ Date: 2026-11-04
      - `hero draw progress maintains completion invariant across responsive viewports` (verified across 9 viewports: 1920×927, 1440×900, 1024×768, 701×800, 700×800, 601×800, 600×800, 576×800, 390×844).
      - `boundary handoff meets hero exit and respects negative-space corridor` (verified across 5 viewports: 1920×927, 1440×900, 700×800, 576×800, 390×844).
      - `responsive threshold transitions rebuild cleanly without errors` (verified dynamic step resizing 701 → 700 → 601 → 600 → 701).
-   - Test suite count increased from 26 to 32 tests; 32/32 tests pass across desktop (Chromium) and mobile (iPhone 13 / Chromium).
+   - Test suite count increased from 26 to 38 tests; 38/38 tests pass across desktop (Chromium) and mobile (iPhone 13 / Chromium).
 
 ## Automated Checks
 - `npm run check`: pass (23 files, 0 errors, 0 warnings, 0 hints)
 - `npm run build`: pass (static build in `dist/` verified)
-- `npx playwright test`: 32/32 passed across `desktop` (16/16) and `mobile` (16/16)
+- `npx playwright test`: 38/38 passed across `desktop` (19/19) and `mobile` (19/19)
 
 ## Boundaries & Architecture Integrity
 - Center Hero aperture remains empty for future Three.js model; no Three.js or WebGL added.

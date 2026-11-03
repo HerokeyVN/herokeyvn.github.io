@@ -104,6 +104,8 @@ Perform these manually at both primary viewports:
 6. Reload at the resized viewport.
 7. Enable `prefers-reduced-motion: reduce`.
 
+For Hero-to-About work, record normal-motion forward and reverse scroll at 1920×927 and 390×844. Inspect the recordings frame by frame. The required sequence is: attached Hero tail → attached short seam handoff → fully hidden travel → endpoint re-entry on the first glyph. Static screenshots cannot approve this sequence.
+
 Reject the implementation if:
 
 - the endpoint jumps across the screen;
@@ -113,6 +115,10 @@ Reject the implementation if:
 - line wrapping changes but connectors use the old route;
 - reverse state differs from forward state at the same position;
 - the trace finishes after the headline leaves the viewport.
+- a completed boundary handoff remains exposed after its marker disappears;
+- the handoff and first glyph are visible simultaneously;
+- a stroke disappears in uncovered empty space instead of behind the header, outside the viewport, or behind an existing mask;
+- document-space endpoints match but the screen recording still reads as separate Hero, edge-stroke, and glyph animations.
 
 ## Readability and collision review
 

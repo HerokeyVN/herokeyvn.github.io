@@ -125,7 +125,9 @@ outer contour → hidden in → inner contour → hidden out → connector/line 
 ### Global continuation
 
 - The Hero exit meets a short visible boundary handoff within 1 CSS pixel.
-- A weighted hidden segment may carry the route from that handoff to the first routed glyph junction. Hide both endpoint markers during this travel; do not expose a long viewport-edge cable merely to keep one SVG path geometrically continuous.
+- The visible handoff is at most `min(72px, 12vw)` in screen space and reads as a shallow seam continuation, not a vertical loose end.
+- A weighted hidden segment may carry the route from that handoff to the first routed glyph junction. During hidden travel, hide the completed handoff element itself as well as both endpoint markers, but only after the handoff is fully occluded or outside the viewport.
+- The handoff and first active glyph contour never overlap visually. Forward and reverse scroll reproduce the same lifecycle at the same `scrollY`.
 - Site segment 1 starts exactly on the final routed glyph junction.
 - Lower-page segments retain their protected gutter routes.
 
@@ -198,12 +200,13 @@ Geometry:
 - Every visible connector endpoint lies on its associated outer contour junction.
 - Each rendered composition has 2–4 planned visible glyph connectors; all remaining adjacencies consume progress as hidden segments.
 - Global entry/exit route continuity is explicit. Any gap between the boundary handoff and first glyph is a weighted hidden segment with hidden markers, never an accidental break in a visible path.
-- The Hero-to-About visible handoff stays within `min(220px, 18vw)` and hidden travel never exposes an endpoint marker.
+- The Hero-to-About visible handoff stays within `min(72px, 12vw)`; hidden travel exposes neither endpoint markers nor a completed handoff path.
 
 Behavior:
 
 - Forward, reverse, rapid direction change, direct anchor navigation, and resize yield the same state for the same `scrollY`.
 - No endpoint teleport is visible; endpoint is hidden for hidden segments.
+- Segment completion and segment persistence are independent: the inter-scene handoff does not remain exposed after its occluded transition into hidden travel.
 - All contours complete before the Experience section owns the route.
 
 Visual:
