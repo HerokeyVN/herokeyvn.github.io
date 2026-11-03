@@ -21,8 +21,15 @@ const links = [
 </header>
 
 <script>
+  const header = document.querySelector<HTMLElement>("[data-site-header]");
   const toggle = document.querySelector<HTMLButtonElement>("[data-menu-toggle]");
   const navigation = document.querySelector<HTMLElement>("[data-site-nav]");
+
+  const updateHeaderScroll = () => {
+    if (header) {
+      header.toggleAttribute("data-compact", window.scrollY > 40);
+    }
+  };
 
   const setMenu = (open: boolean) => {
     if (!toggle || !navigation) return;
@@ -31,6 +38,9 @@ const links = [
     document.body.toggleAttribute("data-menu-open", open);
     if (open) navigation.querySelector<HTMLAnchorElement>("a")?.focus();
   };
+
+  window.addEventListener("scroll", updateHeaderScroll, { passive: true });
+  updateHeaderScroll();
 
   toggle?.addEventListener("click", () => setMenu(toggle.getAttribute("aria-expanded") !== "true"));
   navigation?.querySelectorAll("a").forEach((link) => link.addEventListener("click", () => setMenu(false)));

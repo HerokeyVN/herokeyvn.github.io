@@ -189,14 +189,13 @@ ol {
   background: transparent;
   font-family: var(--font-mono);
   text-transform: uppercase;
+  transition: padding 0.2s ease;
 }
 
 .site-header[data-compact] {
   padding-top: 1rem;
   padding-bottom: 1rem;
-  background: rgba(5, 5, 5, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--void);
   border-bottom: 1px solid var(--border-subtle);
 }
 
