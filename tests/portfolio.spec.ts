@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { GLYPH_JUNCTION_PREFERENCES } from "../src/data/about-glyphs";
+import { GLYPH_TRANSITIONS } from "../src/data/about-glyphs";
 
 test("communicates the professional position and exposes working destinations", async ({ page }) => {
   const errors: string[] = [];
@@ -139,26 +139,23 @@ test("keeps the site thread outside protected content", async ({ page }) => {
 });
 
 test("builds a continuous thread system around every outlined glyph", async ({ page }) => {
-  // Assert the implementation uses explicit outer-junction preferences rather than a single topmost strategy
-  const prefKeys = Object.keys(GLYPH_JUNCTION_PREFERENCES);
-  expect(prefKeys.length).toBe(14);
-  const modes = prefKeys.map((key) => {
-    const pref = GLYPH_JUNCTION_PREFERENCES[key]!;
-    return "mode" in pref ? pref.mode : (pref.desktop?.mode || pref.mobile?.mode);
-  });
-  const uniqueModes = new Set(modes);
-  expect(uniqueModes.size).toBeGreaterThan(1);
-  expect(uniqueModes.has("top")).toBe(true);
-  expect(uniqueModes.has("bottom")).toBe(true);
-
-  // Assert repeated glyphs have differing preferences
-  expect(GLYPH_JUNCTION_PREFERENCES["0-1"]).not.toEqual(GLYPH_JUNCTION_PREFERENCES["0-4"]);
-  expect(GLYPH_JUNCTION_PREFERENCES["2-1"]).not.toEqual(GLYPH_JUNCTION_PREFERENCES["2-2"]);
+  // Assert explicit transition plan defines sparse, art-directed visible transitions
+  expect(GLYPH_TRANSITIONS.length).toBeGreaterThanOrEqual(3);
+  const visiblePlan = GLYPH_TRANSITIONS.filter((t) => t.visibility === "visible");
+  expect(visiblePlan.length).toBeGreaterThanOrEqual(3);
+  for (const trans of visiblePlan) {
+    expect(trans.from).toMatch(/^\d+-\d+$/);
+    expect(trans.to).toMatch(/^\d+-\d+$/);
+    expect(trans.fromAnchor).toBeDefined();
+    expect(trans.toAnchor).toBeDefined();
+  }
 
   await page.goto("/");
-  await page.waitForFunction(() =>
-    document.querySelectorAll("[data-glyph-connector]").length >= 12,
-  );
+  await page.waitForFunction(() => {
+    const contours = document.querySelectorAll("[data-glyph-contour]");
+    const connectors = document.querySelectorAll("[data-glyph-connector]");
+    return contours.length === 17 && connectors.length >= 2;
+  });
 
   const continuity = await page.evaluate(() => {
     const screenPoint = (path: SVGPathElement, distance: number) => {
@@ -167,71 +164,150 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
       if (!matrix) return point;
       return new DOMPoint(point.x, point.y).matrixTransform(matrix);
     };
-    const outerContours = [...document.querySelectorAll<SVGPathElement>("[data-glyph-contour='0']")];
-    const samples = outerContours.flatMap((path) => {
-      const length = path.getTotalLength();
-      return Array.from({ length: 121 }, (_, index) => screenPoint(path, length * index / 120));
+
+    const glyphElements = [...document.querySelectorAll<HTMLElement>(".about__glyph[data-glyph-key]")];
+    const rawGlyphs = glyphElements.map((el) => {
+      const key = el.dataset.glyphKey!;
+      const box = el.getBoundingClientRect();
+      return {
+        key,
+        top: box.top + scrollY,
+        left: box.left + scrollX,
+        box,
+      };
     });
-    const distanceToOutline = (point: DOMPoint | SVGPoint) => Math.min(...samples.map((sample) =>
-      Math.hypot(point.x - sample.x, point.y - sample.y),
-    ));
+
+    const lines: typeof rawGlyphs[] = [];
+    [...rawGlyphs].sort((a, b) => a.top - b.top || a.left - b.left).forEach((glyph) => {
+      const line = lines.find((items) => Math.abs(items[0]!.top - glyph.top) < 4);
+      line ? line.push(glyph) : lines.push([glyph]);
+    });
+    lines.forEach((line, lineIndex) => {
+      line.sort((a, b) => a.left - b.left);
+      if (lineIndex % 2 === 0) line.reverse();
+    });
+    const renderedOrder = lines.flat().map((g) => g.key);
+
+    const outerContours = [...document.querySelectorAll<SVGPathElement>("[data-glyph-contour='0']")];
+    const contourSampleMap = new Map<string, DOMPoint[]>();
+    for (const path of outerContours) {
+      const key = path.dataset.glyphKey!;
+      const length = path.getTotalLength();
+      const pts = Array.from({ length: 121 }, (_, index) => screenPoint(path, (length * index) / 120));
+      contourSampleMap.set(key, pts);
+    }
+
+    const distanceToContour = (point: DOMPoint | SVGPoint, key: string) => {
+      const samples = contourSampleMap.get(key);
+      if (!samples) return 999;
+      return Math.min(...samples.map((s) => Math.hypot(point.x - s.x, point.y - s.y)));
+    };
+
     const connectors = [...document.querySelectorAll<SVGPathElement>("[data-glyph-connector]")];
     const sitePaths = [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")];
-    const junctions = connectors.flatMap((path) => [
-      screenPoint(path, 0),
-      screenPoint(path, path.getTotalLength()),
-    ]);
-    junctions.push(screenPoint(sitePaths[0]!, sitePaths[0]!.getTotalLength()));
-    junctions.push(screenPoint(sitePaths[1]!, 0));
 
-    // Group same-line connectors to check vertical variation
-    const connPoints = connectors.map((c) => ({
-      start: screenPoint(c, 0),
-      end: screenPoint(c, c.getTotalLength()),
-    }));
-    const connectorLines: typeof connPoints[] = [];
-    let currentLine: typeof connPoints = [];
-    for (let i = 0; i < connPoints.length; i++) {
-      const c = connPoints[i]!;
-      if (currentLine.length > 0) {
-        const prev = currentLine[currentLine.length - 1]!;
-        const prevMidY = (prev.start.y + prev.end.y) / 2;
-        const currMidY = (c.start.y + c.end.y) / 2;
-        if (Math.abs(currMidY - prevMidY) > 35) {
-          connectorLines.push(currentLine);
-          currentLine = [];
+    const connectorDetails = connectors.map((connector) => {
+      const fromKey = connector.getAttribute("data-from-glyph") || "";
+      const toKey = connector.getAttribute("data-to-glyph") || "";
+      const length = connector.getTotalLength();
+      const pStart = screenPoint(connector, 0);
+      const pEnd = screenPoint(connector, length);
+      const directDist = Math.hypot(pEnd.x - pStart.x, pEnd.y - pStart.y);
+      const lengthRatio = directDist > 0 ? length / directDist : 1;
+
+      const fromIdx = renderedOrder.indexOf(fromKey);
+      const toIdx = renderedOrder.indexOf(toKey);
+      const isAdjacent = fromIdx !== -1 && toIdx === fromIdx + 1;
+
+      const startDistToFromContour = distanceToContour(pStart, fromKey);
+      const endDistToToContour = distanceToContour(pEnd, toKey);
+
+      const fromPath = document.querySelector<SVGPathElement>(`path[data-glyph-key='${fromKey}'][data-glyph-contour='0']`)!;
+      const toPath = document.querySelector<SVGPathElement>(`path[data-glyph-key='${toKey}'][data-glyph-contour='0']`)!;
+      const fromBox = fromPath ? fromPath.getBoundingClientRect() : { left: 0, right: 0, top: 0, bottom: 0 };
+      const toBox = toPath ? toPath.getBoundingClientRect() : { left: 0, right: 0, top: 0, bottom: 0 };
+
+      const inset = 1;
+      const isInside = (pt: DOMPoint | SVGPoint, b: { left: number; right: number; top: number; bottom: number }, ins = 0) => {
+        return pt.x > b.left + ins && pt.x < b.right - ins && pt.y > b.top + ins && pt.y < b.bottom - ins;
+      };
+
+      const otherGlyphBoxes = rawGlyphs
+        .filter((g) => g.key !== fromKey && g.key !== toKey)
+        .map((g) => {
+          const p = document.querySelector<SVGPathElement>(`path[data-glyph-key='${g.key}'][data-glyph-contour='0']`);
+          return p ? p.getBoundingClientRect() : g.box;
+        });
+
+      let entersNonEndpointBox = false;
+      let entersEndpointInsetBox = false;
+      const sampleCount = 40;
+      for (let i = 0; i <= sampleCount; i++) {
+        const d = length * (0.15 + 0.7 * (i / sampleCount));
+        const pt = screenPoint(connector, d);
+        if (otherGlyphBoxes.some((b) => isInside(pt, b, 0))) {
+          entersNonEndpointBox = true;
+        }
+        if (isInside(pt, fromBox, inset) || isInside(pt, toBox, inset)) {
+          entersEndpointInsetBox = true;
         }
       }
-      currentLine.push(c);
-    }
-    if (currentLine.length > 0) connectorLines.push(currentLine);
 
-    const spreads: number[] = [];
-    for (const line of connectorLines) {
-      for (let i = 0; i <= line.length - 3; i++) {
-        const c0 = line[i]!, c1 = line[i + 1]!, c2 = line[i + 2]!;
-        const ys = [c0.start.y, c0.end.y, c1.start.y, c1.end.y, c2.start.y, c2.end.y];
-        spreads.push(Math.max(...ys) - Math.min(...ys));
-      }
-    }
+      return {
+        fromKey,
+        toKey,
+        isAdjacent,
+        length,
+        directDist,
+        lengthRatio,
+        startDistToFromContour,
+        endDistToToContour,
+        entersNonEndpointBox,
+        entersEndpointInsetBox,
+      };
+    });
+
+    const allSamples = outerContours.flatMap((path) => {
+      const len = path.getTotalLength();
+      return Array.from({ length: 121 }, (_, index) => screenPoint(path, (len * index) / 120));
+    });
+    const distanceToAnyOutline = (point: DOMPoint | SVGPoint) =>
+      Math.min(...allSamples.map((sample) => Math.hypot(point.x - sample.x, point.y - sample.y)));
+
+    const globalJunctions = [
+      screenPoint(sitePaths[0]!, sitePaths[0]!.getTotalLength()),
+      screenPoint(sitePaths[1]!, 0),
+    ];
+    const globalJunctionError = Math.max(...globalJunctions.map(distanceToAnyOutline));
 
     return {
       glyphCount: document.querySelectorAll(".about__glyph").length,
-      lineCount: new Set([...document.querySelectorAll(".about__glyph")].map((glyph) => Math.round(glyph.getBoundingClientRect().top))).size,
+      lineCount: lines.length,
       contourCount: document.querySelectorAll("[data-glyph-contour]").length,
       connectorCount: connectors.length,
       zeroLengthPaths: [...outerContours, ...connectors, ...sitePaths].filter((path) => path.getTotalLength() <= 0).length,
-      maxJunctionError: Math.max(...junctions.map(distanceToOutline)),
-      min3ConnectorSpread: spreads.length ? Math.min(...spreads) : 999,
+      connectorDetails,
+      globalJunctionError,
     };
   });
 
   expect(continuity.glyphCount).toBe(14);
   expect(continuity.contourCount).toBe(17);
-  expect(continuity.connectorCount).toBe(continuity.glyphCount - continuity.lineCount);
   expect(continuity.zeroLengthPaths).toBe(0);
-  expect(continuity.maxJunctionError).toBeLessThan(0.75);
-  expect(continuity.min3ConnectorSpread).toBeGreaterThan(4);
+  expect(continuity.connectorCount).toBeGreaterThanOrEqual(2);
+  expect(continuity.connectorCount).toBeLessThanOrEqual(4);
+  expect(continuity.globalJunctionError).toBeLessThan(0.75);
+
+  for (const detail of continuity.connectorDetails) {
+    expect(detail.fromKey).toBeTruthy();
+    expect(detail.toKey).toBeTruthy();
+    expect(detail.isAdjacent).toBe(true);
+    expect(detail.startDistToFromContour).toBeLessThan(0.75);
+    expect(detail.endDistToToContour).toBeLessThan(0.75);
+    expect(detail.lengthRatio).toBeLessThanOrEqual(1.4);
+    expect(detail.entersNonEndpointBox).toBe(false);
+    expect(detail.entersEndpointInsetBox).toBe(false);
+  }
 });
 
 test("protects the sticky header corridor from scrolled thread geometry", async ({ page }, testInfo) => {
@@ -380,9 +456,11 @@ test("keeps every glyph contour aligned after direct navigation and resizing", a
 
 test("synchronizes the full glyph trace with scroll position and reverses cleanly", async ({ page }) => {
   await page.goto("/");
-  await page.waitForFunction(() =>
-    document.querySelectorAll("[data-glyph-connector]").length >= 12,
-  );
+  await page.waitForFunction(() => {
+    const contours = document.querySelectorAll("[data-glyph-contour]");
+    const connectors = document.querySelectorAll("[data-glyph-connector]");
+    return contours.length === 17 && connectors.length >= 2;
+  });
 
   const initiallyVisible = await page.locator("[data-glyph-contour]").evaluateAll((paths) =>
     paths.filter((path) => (path as SVGPathElement).style.visibility !== "hidden").length,
