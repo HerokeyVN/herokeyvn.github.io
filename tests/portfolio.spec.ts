@@ -657,52 +657,84 @@ test("boundary handoff meets hero exit and respects negative-space corridor", as
       const box = handoffPath.getBoundingClientRect();
       const inNegativeSpace = box.left > window.innerWidth * 0.45 && box.right <= window.innerWidth + 2;
 
+      const pStart = handoffPath.getPointAtLength(0);
+      const pEnd = handoffPath.getPointAtLength(length);
+      const dx = Math.abs(pEnd.x - pStart.x);
+      const dy = Math.abs(pEnd.y - pStart.y);
+      const displacementRatio = dx > 0 ? dy / dx : 0;
+
       return {
         heroHandoffDist,
         sampledLen,
         inNegativeSpace,
+        displacementRatio,
         box,
       };
     });
 
     expect(handoffCheck.heroHandoffDist).toBeLessThanOrEqual(1.0);
-    const maxAllowedLen = Math.min(220, vp.width * 0.18) + 2;
+    const maxAllowedLen = Math.min(72, vp.width * 0.12) + 2;
     expect(handoffCheck.sampledLen).toBeLessThanOrEqual(maxAllowedLen);
     expect(handoffCheck.inNegativeSpace).toBe(true);
+    expect(handoffCheck.displacementRatio).toBeLessThanOrEqual(2.5);
 
-    const heroH = await page.evaluate(() => {
+    const hiddenInfo = await page.evaluate(() => {
+      const isMobile = window.innerWidth <= 700;
+      const heroExit = document.querySelector<SVGPathElement>(
+        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
+      )!;
+      const p = heroExit.getPointAtLength(heroExit.getTotalLength());
+      const m = heroExit.getScreenCTM();
       const hero = document.getElementById("top") || document.querySelector(".hero");
-      return hero ? hero.getBoundingClientRect().height : window.innerHeight;
-    });
-
-    const hiddenInfo = await page.evaluate((h) => {
+      const heroH = hero ? hero.getBoundingClientRect().height : window.innerHeight;
+      const heroEndY = m ? p.x * m.b + p.y * m.d + m.f + scrollY : heroH;
+      const targetL = isMobile
+        ? Math.min(42, Math.max(34, window.innerWidth * 0.09))
+        : Math.min(60, Math.max(50, window.innerWidth * 0.04));
+      const dx = isMobile ? -Math.round(targetL / 2.45) : Math.round(targetL / 2.45);
+      const dy = Math.round(Math.abs(dx) * 2.18);
+      const handoffBottom = heroEndY + dy;
+      const header = document.querySelector<HTMLElement>("[data-site-header]");
+      let headerH = 60;
+      if (header) {
+        const wasCompact = header.hasAttribute("data-compact");
+        const prevTransition = header.style.transition;
+        header.style.transition = "none";
+        header.setAttribute("data-compact", "");
+        headerH = header.offsetHeight;
+        header.style.transition = prevTransition;
+        if (!wasCompact) header.removeAttribute("data-compact");
+      }
+      const sOccluded = Math.ceil(handoffBottom - headerH);
       const firstGlyph = document.querySelector<HTMLElement>(".about__glyph");
-      const firstY = firstGlyph ? firstGlyph.getBoundingClientRect().top + window.scrollY : h + 200;
-      const s0 = Math.round(h * 0.55);
-      const s1 = Math.max(s0 + 80, Math.round(firstY - window.innerHeight * 0.72));
-      const sHandoffEnd = s0 + Math.max(30, Math.round((s1 - s0) * 0.45));
-      const midHidden = Math.round((sHandoffEnd + s1) / 2);
+      const firstY = firstGlyph ? firstGlyph.getBoundingClientRect().top + window.scrollY : heroH + 400;
+      const sGlyphStart = Math.max(sOccluded + (isMobile ? 65 : 85), Math.round(firstY - window.innerHeight * 0.72));
+
+      const midHidden = Math.round((sOccluded + sGlyphStart) / 2);
       window.scrollTo({ top: midHidden, behavior: "instant" });
       window.dispatchEvent(new Event("scroll"));
 
       const siteEnd = document.querySelector<SVGElement>("[data-site-thread-end]");
       const glyphEnd = document.querySelector<SVGElement>("[data-glyph-thread-end]");
+      const handoff = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']");
       const siteEndHidden = !siteEnd || getComputedStyle(siteEnd).opacity === "0" || getComputedStyle(siteEnd).visibility === "hidden";
       const glyphEndHidden = !glyphEnd || getComputedStyle(glyphEnd).opacity === "0" || getComputedStyle(glyphEnd).visibility === "hidden";
+      const handoffHidden = !handoff || getComputedStyle(handoff).visibility === "hidden";
 
       return {
-        s0,
-        s1,
-        sHandoffEnd,
+        sOccluded,
+        sGlyphStart,
         midHidden,
         siteEndHidden,
         glyphEndHidden,
+        handoffHidden,
       };
-    }, heroH);
+    });
 
-    expect(hiddenInfo.s1 - hiddenInfo.sHandoffEnd).toBeGreaterThan(0);
+    expect(hiddenInfo.sGlyphStart - hiddenInfo.sOccluded).toBeGreaterThan(0);
     expect(hiddenInfo.siteEndHidden).toBe(true);
     expect(hiddenInfo.glyphEndHidden).toBe(true);
+    expect(hiddenInfo.handoffHidden).toBe(true);
 
     const collisions = await page.evaluate(() => {
       const handoffPath = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']")!;
@@ -787,4 +819,286 @@ test("responsive threshold transitions rebuild cleanly without errors", async ({
   }
 
   expect(errors).toEqual([]);
+});
+
+test("enforces continuous lifecycle A -> B -> C -> D and reversible symmetry", async ({ page }) => {
+  const viewports = [
+    { width: 1920, height: 927 },
+    { width: 1440, height: 900 },
+    { width: 700, height: 800 },
+    { width: 576, height: 800 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
+    await page.evaluate(() => document.fonts.ready);
+
+    const samplingResult = await page.evaluate(async () => {
+      const hero = document.getElementById("top") || document.querySelector(".hero");
+      const heroH = hero ? hero.getBoundingClientRect().height : window.innerHeight;
+      const s0 = Math.round(heroH * 0.55);
+
+      const header = document.querySelector<HTMLElement>("[data-site-header]");
+      let headerH = 60;
+      if (header) {
+        const wasCompact = header.hasAttribute("data-compact");
+        const prevTransition = header.style.transition;
+        header.style.transition = "none";
+        header.setAttribute("data-compact", "");
+        headerH = header.offsetHeight;
+        header.style.transition = prevTransition;
+        if (!wasCompact) header.removeAttribute("data-compact");
+      }
+
+      const isMobile = window.innerWidth <= 700;
+      const heroExit = document.querySelector<SVGPathElement>(
+        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
+      )!;
+      const p = heroExit.getPointAtLength(heroExit.getTotalLength());
+      const m = heroExit.getScreenCTM();
+      const heroEndY = m ? p.x * m.b + p.y * m.d + m.f + scrollY : heroH;
+      const targetL = isMobile
+        ? Math.min(42, Math.max(34, window.innerWidth * 0.09))
+        : Math.min(60, Math.max(50, window.innerWidth * 0.04));
+      const dx = isMobile ? -Math.round(targetL / 2.45) : Math.round(targetL / 2.45);
+      const dy = Math.round(Math.abs(dx) * 2.18);
+      const handoffBottom = heroEndY + dy;
+      const sOccluded = Math.ceil(handoffBottom - headerH);
+
+      const firstGlyph = document.querySelector<HTMLElement>(isMobile ? ".about__glyph" : ".about__glyph");
+      const firstY = firstGlyph ? firstGlyph.getBoundingClientRect().top + window.scrollY : heroH + 400;
+      const sGlyphStart = Math.max(sOccluded + (isMobile ? 65 : 85), Math.round(firstY - window.innerHeight * 0.72));
+
+      const svg = document.querySelector<SVGElement>("svg[data-site-thread]")!;
+      const handoff = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']")!;
+      const siteEnd = document.querySelector<SVGElement>("[data-site-thread-end]")!;
+      const glyphEnd = document.querySelector<SVGElement>("[data-glyph-thread-end]")!;
+
+      const startScroll = Math.max(0, s0 - 48);
+      const endScroll = sGlyphStart + 48;
+
+      type Sample = {
+        y: number;
+        phase: string;
+        handoffVis: string;
+        siteEndVis: boolean;
+        glyphEndVis: boolean;
+      };
+
+      const forwardSamples: Sample[] = [];
+      for (let y = startScroll; y <= endScroll; y += 8) {
+        window.scrollTo({ top: y, behavior: "instant" });
+        window.dispatchEvent(new Event("scroll"));
+
+        const phase = svg.getAttribute("data-thread-phase") || "unknown";
+        const handoffVis = getComputedStyle(handoff).visibility;
+        const siteEndVis = getComputedStyle(siteEnd).opacity !== "0" && getComputedStyle(siteEnd).visibility !== "hidden";
+        const glyphEndVis = getComputedStyle(glyphEnd).opacity !== "0" && getComputedStyle(glyphEnd).visibility !== "hidden";
+
+        forwardSamples.push({ y, phase, handoffVis, siteEndVis, glyphEndVis });
+      }
+
+      const reverseYList = [...forwardSamples.map((s) => s.y)].reverse();
+      const reverseSamples: Sample[] = [];
+      for (const y of reverseYList) {
+        window.scrollTo({ top: y, behavior: "instant" });
+        window.dispatchEvent(new Event("scroll"));
+
+        const phase = svg.getAttribute("data-thread-phase") || "unknown";
+        const handoffVis = getComputedStyle(handoff).visibility;
+        const siteEndVis = getComputedStyle(siteEnd).opacity !== "0" && getComputedStyle(siteEnd).visibility !== "hidden";
+        const glyphEndVis = getComputedStyle(glyphEnd).opacity !== "0" && getComputedStyle(glyphEnd).visibility !== "hidden";
+
+        reverseSamples.push({ y, phase, handoffVis, siteEndVis, glyphEndVis });
+      }
+
+      return {
+        s0,
+        sOccluded,
+        sGlyphStart,
+        forwardSamples,
+        reverseSamples,
+      };
+    });
+
+    const { forwardSamples, reverseSamples } = samplingResult;
+
+    const distinctPhases: string[] = [];
+    forwardSamples.forEach((sample, idx) => {
+      if (idx === 0 || sample.phase !== forwardSamples[idx - 1]!.phase) {
+        distinctPhases.push(sample.phase);
+      }
+      if (sample.phase === "handoff") {
+        expect(sample.handoffVis).not.toBe("hidden");
+      }
+      if (sample.phase === "hidden") {
+        expect(sample.handoffVis).toBe("hidden");
+        expect(sample.siteEndVis).toBe(false);
+        expect(sample.glyphEndVis).toBe(false);
+      }
+      if (sample.phase === "glyph") {
+        expect(sample.handoffVis).toBe("hidden");
+      }
+    });
+
+    expect(distinctPhases).toEqual(["hero", "handoff", "hidden", "glyph"]);
+
+    const reverseByY = new Map(reverseSamples.map((s) => [s.y, s]));
+    for (const fSample of forwardSamples) {
+      const rSample = reverseByY.get(fSample.y);
+      expect(rSample).toBeDefined();
+      expect(rSample!.phase).toBe(fSample.phase);
+      expect(rSample!.handoffVis).toBe(fSample.handoffVis);
+      expect(rSample!.siteEndVis).toBe(fSample.siteEndVis);
+      expect(rSample!.glyphEndVis).toBe(fSample.glyphEndVis);
+    }
+  }
+});
+
+test("guarantees handoff is fully occluded before hiding", async ({ page }) => {
+  const viewports = [
+    { width: 1920, height: 927 },
+    { width: 1440, height: 900 },
+    { width: 700, height: 800 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
+    await page.evaluate(() => document.fonts.ready);
+
+    const occlusionData = await page.evaluate(async () => {
+      const isMobile = window.innerWidth <= 700;
+      const heroExit = document.querySelector<SVGPathElement>(
+        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
+      )!;
+      const p = heroExit.getPointAtLength(heroExit.getTotalLength());
+      const m = heroExit.getScreenCTM();
+      const hero = document.getElementById("top") || document.querySelector(".hero");
+      const heroH = hero ? hero.getBoundingClientRect().height : window.innerHeight;
+      const heroEndY = m ? p.x * m.b + p.y * m.d + m.f + scrollY : heroH;
+      const targetL = isMobile
+        ? Math.min(42, Math.max(34, window.innerWidth * 0.09))
+        : Math.min(60, Math.max(50, window.innerWidth * 0.04));
+      const dx = isMobile ? -Math.round(targetL / 2.45) : Math.round(targetL / 2.45);
+      const dy = Math.round(Math.abs(dx) * 2.18);
+      const handoffBottom = heroEndY + dy;
+
+      const header = document.querySelector<HTMLElement>("[data-site-header]");
+      let headerH = 60;
+      if (header) {
+        const wasCompact = header.hasAttribute("data-compact");
+        const prevTransition = header.style.transition;
+        header.style.transition = "none";
+        header.setAttribute("data-compact", "");
+        headerH = header.offsetHeight;
+        header.style.transition = prevTransition;
+        if (!wasCompact) header.removeAttribute("data-compact");
+      }
+      const sOccluded = Math.ceil(handoffBottom - headerH);
+
+      const handoff = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']")!;
+
+      window.scrollTo({ top: sOccluded - 1, behavior: "instant" });
+      window.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      const beforeVis = getComputedStyle(handoff).visibility;
+      const handoffBoxBefore = handoff.getBoundingClientRect();
+      const headerBoxBefore = header!.getBoundingClientRect();
+
+      window.scrollTo({ top: sOccluded, behavior: "instant" });
+      window.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const atVis = getComputedStyle(handoff).visibility;
+      const handoffBoxAt = handoff.getBoundingClientRect();
+      const headerBoxAt = header!.getBoundingClientRect();
+
+      return {
+        sOccluded,
+        headerH,
+        beforeVis,
+        handoffBottomBefore: handoffBoxBefore.bottom,
+        headerBottomBefore: headerBoxBefore.bottom,
+        atVis,
+        handoffBottomAt: handoffBoxAt.bottom,
+        headerBottomAt: headerBoxAt.bottom,
+      };
+    });
+
+    expect(occlusionData.beforeVis).not.toBe("hidden");
+    expect(occlusionData.handoffBottomBefore).toBeLessThanOrEqual(occlusionData.headerBottomBefore + 1.5);
+
+    expect(occlusionData.atVis).toBe("hidden");
+    expect(occlusionData.handoffBottomAt).toBeLessThanOrEqual(occlusionData.headerBottomAt + 0.5);
+  }
+});
+
+test("initial hero state renders statically and deterministically without dead tweens", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForLoadState("domcontentloaded");
+  await page.evaluate(() => document.fonts.ready);
+
+  const initial = await page.evaluate(() => {
+    const isMobile = window.innerWidth <= 700;
+    const selector = isMobile ? "[data-thread-segment-mobile='0']" : "[data-thread-segment='0']";
+    const p0 = document.querySelector<SVGPathElement>(selector)!;
+    const offset0 = parseFloat(p0.style.strokeDashoffset || getComputedStyle(p0).strokeDashoffset);
+    const vis0 = getComputedStyle(p0).visibility;
+    return {
+      offset0,
+      vis0,
+    };
+  });
+
+  expect(initial.vis0).toBe("visible");
+  expect(initial.offset0).toBeGreaterThan(0.01);
+  expect(initial.offset0).toBeLessThan(0.99);
+
+  await page.waitForTimeout(150);
+  const afterWait = await page.evaluate(() => {
+    const isMobile = window.innerWidth <= 700;
+    const selector = isMobile ? "[data-thread-segment-mobile='0']" : "[data-thread-segment='0']";
+    const p0 = document.querySelector<SVGPathElement>(selector)!;
+    return parseFloat(p0.style.strokeDashoffset || getComputedStyle(p0).strokeDashoffset);
+  });
+  expect(afterWait).toBe(initial.offset0);
+
+  // 3. Navigate directly to #about and back to #top to ensure determinism
+  await page.locator("#about").scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => window.scrollY > 200);
+
+  await page.evaluate(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+    window.dispatchEvent(new Event("scroll"));
+  });
+  await page.waitForFunction(() => window.scrollY === 0);
+  await page.waitForTimeout(50);
+
+  const afterNav = await page.evaluate(() => {
+    const isMobile = window.innerWidth <= 700;
+    const selector = isMobile ? "[data-thread-segment-mobile='0']" : "[data-thread-segment='0']";
+    const p0 = document.querySelector<SVGPathElement>(selector)!;
+    return parseFloat(p0.style.strokeDashoffset || getComputedStyle(p0).strokeDashoffset);
+  });
+  expect(Math.abs(afterNav - initial.offset0)).toBeLessThan(0.001);
+
+  // 4. Reload page to confirm initial deterministic state
+  await page.reload();
+  await page.waitForLoadState("domcontentloaded");
+  await page.evaluate(() => document.fonts.ready);
+
+  const afterReload = await page.evaluate(() => {
+    const isMobile = window.innerWidth <= 700;
+    const selector = isMobile ? "[data-thread-segment-mobile='0']" : "[data-thread-segment='0']";
+    const p0 = document.querySelector<SVGPathElement>(selector)!;
+    return parseFloat(p0.style.strokeDashoffset || getComputedStyle(p0).strokeDashoffset);
+  });
+  expect(Math.abs(afterReload - initial.offset0)).toBeLessThan(0.001);
 });
