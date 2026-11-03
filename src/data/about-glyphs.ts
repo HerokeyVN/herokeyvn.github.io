@@ -16,3 +16,30 @@ export const ABOUT_GLYPHS: Record<string, { advance: number; contours: string[] 
 export const ABOUT_GLYPH_INSTANCES = ABOUT_TRACE_WORDS.flatMap((word, wordIndex) =>
   [...word].map((char, charIndex) => ({ key: `${wordIndex}-${charIndex}`, char, contours: ABOUT_GLYPHS[char]!.contours })),
 );
+
+export type JunctionPreference = {
+  mode: "top" | "right" | "bottom" | "left" | "fraction";
+  fraction?: number;
+};
+
+export type GlyphRouteOverride = {
+  desktop?: JunctionPreference;
+  mobile?: JunctionPreference;
+};
+
+export const GLYPH_JUNCTION_PREFERENCES: Record<string, JunctionPreference | GlyphRouteOverride> = {
+  "0-0": { mode: "top" },
+  "0-1": { mode: "bottom" },
+  "0-2": { mode: "top" },
+  "0-3": { mode: "bottom" },
+  "0-4": { mode: "top" },
+  "1-0": { mode: "bottom" },
+  "1-1": { mode: "top" },
+  "1-2": { mode: "bottom" },
+  "1-3": { mode: "bottom" },
+  "1-4": { mode: "top" },
+  "2-0": { mode: "bottom" },
+  "2-1": { mode: "top" },
+  "2-2": { mode: "bottom" },
+  "2-3": { mode: "top" },
+};

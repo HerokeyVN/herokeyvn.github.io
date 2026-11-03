@@ -1,5 +1,6 @@
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { GLYPH_JUNCTION_PREFERENCES, type JunctionPreference } from "../data/about-glyphs";
 
 type Segment = { element?: SVGPathElement; drawLength: number; weight: number; startDistance: number; kind: "open" | "closed" | "hidden"; layer: "site" | "glyph"; startScroll: number; endScroll: number };
 type Junction = { x: number; y: number; distance: number };
@@ -63,13 +64,41 @@ export function initSiteThread() {
     gsap.set(activeEnd, { autoAlpha: 1 }); gsap.set(inactiveEnd, { autoAlpha: 0 });
   };
 
-  const findTopJunction = (path: SVGPathElement, originX: number, baselineY: number, scale: number): Junction => {
+  const findJunction = (
+    path: SVGPathElement,
+    originX: number,
+    baselineY: number,
+    scale: number,
+    pref?: JunctionPreference,
+  ): Junction => {
     const length = path.getTotalLength();
-    let best = { x: 0, y: Number.POSITIVE_INFINITY, distance: 0 };
-    for (let i = 0; i < 120; i++) {
-      const distance = length * i / 120;
+    const samples = 120;
+    const mode = pref?.mode ?? "top";
+
+    if (mode === "fraction") {
+      const distance = length * Math.max(0, Math.min(1, pref?.fraction ?? 0));
       const point = path.getPointAtLength(distance);
-      if (point.y < best.y) best = { x: point.x, y: point.y, distance };
+      return { x: originX + point.x * scale, y: baselineY + point.y * scale, distance };
+    }
+
+    let best = { x: 0, y: 0, distance: 0 };
+    let bestMetric = (mode === "top" || mode === "left") ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i <= samples; i++) {
+      const distance = (length * i) / samples;
+      const point = path.getPointAtLength(distance);
+      const metric = (mode === "top" || mode === "bottom") ? point.y : point.x;
+      if (mode === "top" || mode === "left") {
+        if (metric < bestMetric) {
+          bestMetric = metric;
+          best = { x: point.x, y: point.y, distance };
+        }
+      } else {
+        if (metric > bestMetric) {
+          bestMetric = metric;
+          best = { x: point.x, y: point.y, distance };
+        }
+      }
     }
     return { x: originX + best.x * scale, y: baselineY + best.y * scale, distance: best.distance };
   };
@@ -88,10 +117,13 @@ export function initSiteThread() {
     }
     const element = document.createElementNS(SVG_NS, "path");
     element.dataset.glyphConnector = "";
-    const direction = Math.sign(to.x - from.x) || 1;
-    const distance = Math.abs(to.x - from.x);
-    const lift = 2;
-    element.setAttribute("d", `M ${from.x} ${from.y} C ${from.x + direction * distance * 0.3} ${from.y - lift}, ${to.x - direction * distance * 0.3} ${to.y - lift}, ${to.x} ${to.y}`);
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const cp1x = from.x + dx * 0.45;
+    const cp1y = from.y + dy * 0.1;
+    const cp2x = to.x - dx * 0.45;
+    const cp2y = to.y - dy * 0.1;
+    element.setAttribute("d", `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`);
     connectorGroup.append(element);
     const length = element.getTotalLength();
     return { element, drawLength: length, weight: length, startDistance: 0, kind: "open", layer: "glyph", startScroll: 0, endScroll: 1 };
@@ -108,6 +140,7 @@ export function initSiteThread() {
     glyphSvg.setAttribute("viewBox", `0 0 ${width} ${height}`); glyphSvg.style.height = `${height}px`;
     connectorGroup.replaceChildren();
 
+    const isMobile = width <= 700;
     const glyphRecords: GlyphRecord[] = [...document.querySelectorAll<HTMLElement>(".about__glyph[data-glyph-key]")].map((element) => {
       const key = element.dataset.glyphKey!;
       const wordIndex = Number(key.split("-")[0]);
@@ -117,7 +150,19 @@ export function initSiteThread() {
       const originX = box.left + scrollX, baselineY = baselineBox.top + scrollY;
       const glyphPaths = [...glyphSvg.querySelectorAll<SVGPathElement>(`path[data-glyph-key='${key}']`)].sort((a, b) => Number(a.dataset.glyphContour) - Number(b.dataset.glyphContour));
       glyphPaths.forEach((path) => path.setAttribute("transform", `translate(${originX} ${baselineY}) scale(${scale})`));
-      return { key, left: originX, top: box.top + scrollY, scale, paths: glyphPaths, junctions: glyphPaths.map((path) => findTopJunction(path, originX, baselineY, scale)), lineIndex: 0 };
+      const rawPref = GLYPH_JUNCTION_PREFERENCES[key];
+      const pref: JunctionPreference | undefined = rawPref
+        ? ("mode" in rawPref ? rawPref : (isMobile && rawPref.mobile ? rawPref.mobile : rawPref.desktop ?? rawPref.mobile))
+        : undefined;
+      return {
+        key,
+        left: originX,
+        top: box.top + scrollY,
+        scale,
+        paths: glyphPaths,
+        junctions: glyphPaths.map((path, contourIndex) => findJunction(path, originX, baselineY, scale, contourIndex === 0 ? pref : undefined)),
+        lineIndex: 0,
+      };
     });
     const lines: GlyphRecord[][] = [];
     [...glyphRecords].sort((a, b) => a.top - b.top || a.left - b.left).forEach((glyph) => { const line = lines.find((items) => Math.abs(items[0]!.top - glyph.top) < 4); line ? line.push(glyph) : lines.push([glyph]); });
