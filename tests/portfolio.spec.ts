@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { GLYPH_JUNCTION_PREFERENCES } from "../src/data/about-glyphs";
 
 test("communicates the professional position and exposes working destinations", async ({ page }) => {
   const errors: string[] = [];
@@ -138,6 +139,22 @@ test("keeps the site thread outside protected content", async ({ page }) => {
 });
 
 test("builds a continuous thread system around every outlined glyph", async ({ page }) => {
+  // Assert the implementation uses explicit outer-junction preferences rather than a single topmost strategy
+  const prefKeys = Object.keys(GLYPH_JUNCTION_PREFERENCES);
+  expect(prefKeys.length).toBe(14);
+  const modes = prefKeys.map((key) => {
+    const pref = GLYPH_JUNCTION_PREFERENCES[key]!;
+    return "mode" in pref ? pref.mode : (pref.desktop?.mode || pref.mobile?.mode);
+  });
+  const uniqueModes = new Set(modes);
+  expect(uniqueModes.size).toBeGreaterThan(1);
+  expect(uniqueModes.has("top")).toBe(true);
+  expect(uniqueModes.has("bottom")).toBe(true);
+
+  // Assert repeated glyphs have differing preferences
+  expect(GLYPH_JUNCTION_PREFERENCES["0-1"]).not.toEqual(GLYPH_JUNCTION_PREFERENCES["0-4"]);
+  expect(GLYPH_JUNCTION_PREFERENCES["2-1"]).not.toEqual(GLYPH_JUNCTION_PREFERENCES["2-2"]);
+
   await page.goto("/");
   await page.waitForFunction(() =>
     document.querySelectorAll("[data-glyph-connector]").length >= 12,
@@ -167,6 +184,37 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
     junctions.push(screenPoint(sitePaths[0]!, sitePaths[0]!.getTotalLength()));
     junctions.push(screenPoint(sitePaths[1]!, 0));
 
+    // Group same-line connectors to check vertical variation
+    const connPoints = connectors.map((c) => ({
+      start: screenPoint(c, 0),
+      end: screenPoint(c, c.getTotalLength()),
+    }));
+    const connectorLines: typeof connPoints[] = [];
+    let currentLine: typeof connPoints = [];
+    for (let i = 0; i < connPoints.length; i++) {
+      const c = connPoints[i]!;
+      if (currentLine.length > 0) {
+        const prev = currentLine[currentLine.length - 1]!;
+        const prevMidY = (prev.start.y + prev.end.y) / 2;
+        const currMidY = (c.start.y + c.end.y) / 2;
+        if (Math.abs(currMidY - prevMidY) > 35) {
+          connectorLines.push(currentLine);
+          currentLine = [];
+        }
+      }
+      currentLine.push(c);
+    }
+    if (currentLine.length > 0) connectorLines.push(currentLine);
+
+    const spreads: number[] = [];
+    for (const line of connectorLines) {
+      for (let i = 0; i <= line.length - 3; i++) {
+        const c0 = line[i]!, c1 = line[i + 1]!, c2 = line[i + 2]!;
+        const ys = [c0.start.y, c0.end.y, c1.start.y, c1.end.y, c2.start.y, c2.end.y];
+        spreads.push(Math.max(...ys) - Math.min(...ys));
+      }
+    }
+
     return {
       glyphCount: document.querySelectorAll(".about__glyph").length,
       lineCount: new Set([...document.querySelectorAll(".about__glyph")].map((glyph) => Math.round(glyph.getBoundingClientRect().top))).size,
@@ -174,6 +222,7 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
       connectorCount: connectors.length,
       zeroLengthPaths: [...outerContours, ...connectors, ...sitePaths].filter((path) => path.getTotalLength() <= 0).length,
       maxJunctionError: Math.max(...junctions.map(distanceToOutline)),
+      min3ConnectorSpread: spreads.length ? Math.min(...spreads) : 999,
     };
   });
 
@@ -182,6 +231,57 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
   expect(continuity.connectorCount).toBe(continuity.glyphCount - continuity.lineCount);
   expect(continuity.zeroLengthPaths).toBe(0);
   expect(continuity.maxJunctionError).toBeLessThan(0.75);
+  expect(continuity.min3ConnectorSpread).toBeGreaterThan(4);
+});
+
+test("protects the sticky header corridor from scrolled thread geometry", async ({ page }, testInfo) => {
+  await page.goto("/");
+  await page.waitForFunction(() => document.querySelectorAll("[data-glyph-contour]").length === 17);
+
+  const targetScrollY = testInfo.project.name === "mobile" ? 1250 : 1450;
+  await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), targetScrollY);
+  await page.waitForFunction((expectedY) => Math.abs(window.scrollY - expectedY) < 2, targetScrollY);
+  await page.waitForFunction(() => {
+    const header = document.querySelector<HTMLElement>("[data-site-header]");
+    return header && header.hasAttribute("data-compact") && getComputedStyle(header).backgroundColor === "rgb(3, 3, 5)";
+  });
+
+  const headerCheck = await page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>("[data-site-header]")!;
+    const glyphThread = document.querySelector<SVGElement>("[data-glyph-thread]")!;
+    const siteThread = document.querySelector<SVGElement>("[data-site-thread]")!;
+    const brand = document.querySelector<HTMLElement>(".brand-mark")!;
+    const headerStyle = getComputedStyle(header);
+    const glyphZ = Number.parseInt(getComputedStyle(glyphThread).zIndex || "0", 10);
+    const siteZ = Number.parseInt(getComputedStyle(siteThread).zIndex || "0", 10);
+    const headerZ = Number.parseInt(headerStyle.zIndex || "0", 10);
+
+    const headerBox = header.getBoundingClientRect();
+    const isCompact = header.hasAttribute("data-compact");
+    const bg = headerStyle.backgroundColor;
+
+    return {
+      isCompact,
+      headerZ,
+      glyphZ,
+      siteZ,
+      bg,
+      headerHeight: headerBox.height,
+      brandVisible: brand.offsetWidth > 0 && brand.offsetHeight > 0,
+    };
+  });
+
+  expect(headerCheck.isCompact).toBe(true);
+  expect(headerCheck.headerZ).toBeGreaterThan(headerCheck.glyphZ);
+  expect(headerCheck.headerZ).toBeGreaterThan(headerCheck.siteZ);
+  expect(headerCheck.bg).toBe("rgb(3, 3, 5)");
+  expect(headerCheck.brandVisible).toBe(true);
+
+  if (testInfo.project.name === "mobile") {
+    await expect(page.locator("[data-menu-toggle]")).toBeVisible();
+  } else {
+    await expect(page.locator("[data-site-nav]")).toBeVisible();
+  }
 });
 
 test("aligns all generated Syne contours with the semantic About heading", async ({ page }) => {
