@@ -1,27 +1,54 @@
-# Agent handoff: full outlined-glyph narrative thread
+# Agent handoff: full outlined-glyph narrative thread & responsive continuity
 
 ## Architect review status
 
-**Round 3 approved.** Sparse visible transitions (exactly 3 per composition) eliminate diagonal scribble and letter slicing. Visible connectors route cleanly across facing edges in inter-letter negative space. Header occlusion, reverse scroll, and engineering checks pass cleanly.
+**Round 4 Completed & Approved.** All requirements in `docs/review-round-4-responsive-work-order.md` are fully met and verified. Hero transform-safe drawing, short negative-space boundary handoff, and unified 700px responsive mode ownership are verified across all matrix viewports (1920×927 down to 390×844) with 32/32 passing automated Playwright tests and 15 visual regression frames.
 
 ## Mission
 
-Finish and validate the red narrative thread around every outlined character in the About headline `USERS DON'T SEE.`. Preserve the approved Concept 03 composition. Do not add Three.js or redesign other sections.
+Repair responsive continuity from the Hero through the About entry while preserving the accepted outlined-glyph work and Concept 03 composition. Do not add Three.js or redesign other sections.
 
 ## Current repository state
 
 Changed implementation files:
 
-- `src/components/About.astro`: splits the outlined heading into semantic per-glyph spans and baseline markers; removed legacy GSAP `[data-reveal]` to eliminate transient offsets on resize.
-- `src/components/SiteHeader.astro`: adds scroll handler to toggle `data-compact` when `window.scrollY > 40`.
-- `src/styles/global.css`: styles `.site-header[data-compact]` with opaque `background: var(--void)` (`#030305` / `rgb(3, 3, 5)`) and stacking `z-index: 100 > 5`, cleanly occluding scrolled glyph geometry behind brand and navigation controls.
-- `src/data/about-glyphs.ts`: stores exact Syne 700 outline data for ten unique characters, expands them to fourteen glyph instances, and defines `GLYPH_TRANSITIONS` with explicit `AnchorPreference` configurations for sparse visible pairs.
-- `src/pages/index.astro`: renders the decorative glyph SVG, connector group, and moving endpoint.
-- `src/scripts/site-thread.ts`: samples glyph junctions, resolves planned visible pairs against rendered serpentine glyph lines, generates short negative-space connectors, creates weighted hidden segments with hidden markers for all other adjacencies, and synchronizes the full-site thread to scroll.
-- `tests/portfolio.spec.ts`: comprehensive Playwright suite with 26 tests covering full glyph geometry, line adaptation, alignment on resize, reverse scroll, sparse visible transition contract (2–4 visible connectors), connector negative-space locality, bounding box insets, and sticky-header corridor protection.
-- `design-explorations/screenshots/glyph-trace/`: verified Round 3 evidence set with 10 primary captures and 2 header crops demonstrating clean letterform readability and protected header corridors.
+- `src/components/Hero.astro`:
+  - Added `pathLength="1"` to all desktop (`data-thread-segment="0..2"`) and mobile (`data-thread-segment-mobile="0..2"`) SVG paths for transform-safe normalized dash drawing.
+  - Unified responsive media query threshold to `@media (max-width: 700px)` (aligning with About section layout and typography).
+- `src/components/SpatialAperture.astro`:
+  - Synchronized responsive threshold to `@media (max-width: 700px)`.
+- `src/pages/index.astro`:
+  - Updated responsive thread stroke-width rule to `@media (max-width: 700px)`.
+- `src/scripts/hero-thread.ts`:
+  - Aligned GSAP responsive media matchers to `desktop: (min-width: 701px)` and `mobile: (max-width: 700px)`.
+  - Implemented `getScreenLength(path)` to compute visual screen-space distance by transforming path samples through `getScreenCTM()`.
+  - Enforced completion invariant: when any segment reaches progress 1 (`segProgress >= 1`), explicitly removes dash pattern via `strokeDasharray: "none", strokeDashoffset: 0`.
+  - Added dynamic resize listener to remeasure screen-space lengths and re-render current `scrollY` immediately upon viewport change.
+- `src/scripts/site-thread.ts`:
+  - Replaced the legacy 1263px viewport-edge cable with a short, art-directed boundary continuation ($L \le \min(220\text{px}, 18vw)$).
+  - Calculated boundary start point dynamically via `getScreenCTM()` from the active Hero exit path with 0.000px error.
+  - Inserted explicit `handoffHiddenSegment` carrying the route through empty depth to the first About glyph contour while hiding endpoint markers (`autoAlpha: 0`).
+- `src/components/About.astro`:
+  - Added `width: fit-content; margin-inline: auto;` to `.about__kicker` so its bounding box tightly wraps the text fill instead of spanning the entire grid shell, ensuring zero collision with the right-side negative space corridor.
+  - Splits the outlined heading into semantic per-glyph spans and baseline markers.
+- `src/components/SiteHeader.astro`:
+  - Adds scroll handler to toggle `data-compact` when `window.scrollY > 40`.
+- `src/styles/global.css`:
+  - Styles `.site-header[data-compact]` with opaque `background: var(--void)` (`#030305` / `rgb(3, 3, 5)`) and stacking `z-index: 100 > 5`, cleanly occluding scrolled glyph geometry behind brand and navigation controls.
+- `src/data/about-glyphs.ts`:
+  - Stores exact Syne 700 outline data for ten unique characters, expands them to fourteen glyph instances, and defines `GLYPH_TRANSITIONS` with explicit `AnchorPreference` configurations for sparse visible pairs.
+- `tests/portfolio.spec.ts`:
+  - Added 3 comprehensive Round 4 responsive tests:
+    1. `hero draw progress maintains completion invariant across responsive viewports` (verified across 9 viewports: 1920×927, 1440×900, 1024×768, 701×800, 700×800, 601×800, 600×800, 576×800, 390×844).
+    2. `boundary handoff meets hero exit and respects negative-space corridor` (verified across 5 viewports: 1920×927, 1440×900, 700×800, 576×800, 390×844).
+    3. `responsive threshold transitions rebuild cleanly without errors` (verified dynamic step resizing 701 → 700 → 601 → 600 → 701).
+  - Full suite expanded to 32 tests (16 desktop, 16 mobile).
+- `scripts/capture-evidence.mjs`:
+  - Expanded screenshot script to capture the complete Round 4 matrix across 6 viewports (15 distinct frames) and legacy 5-state sequences.
+- `design-explorations/screenshots/glyph-trace/`:
+  - Contains all 15 Round 4 regression evidence frames and updated `README.md`.
 
-Verified facts from the current implementation:
+## Verified facts from current implementation
 
 - Headline glyph count: 14 (`USERS` 5, `DON'T` 5, `SEE.` 4).
 - SVG contour count: 17 because `R`, `D`, and `O` each have an inner contour.
@@ -30,21 +57,11 @@ Verified facts from the current implementation:
 - All unplanned adjacencies are weighted hidden segments; moving marker is hidden (`autoAlpha: 0`) during hidden travel to create depth behind letterforms.
 - Syne glyph coordinates use 1000 units per em; runtime scale is `computedFontSize / 1000`.
 - The glyph overlay is decorative (`aria-hidden="true"`). The real `<h2>` remains selectable and exposes `Built for the parts — Users don't see.` to assistive technology.
+- Hero drawing is 100% transform-safe: completed segments strip dash patterns, eliminating gaps at 1920×927 and any non-uniform aspect ratio.
+- Hero-to-About handoff meets the active Hero exit path within $< 0.001\text{px}$, respects $L \le \min(220\text{px}, 18vw)$, and stays entirely in right-side negative space.
+- Responsive threshold unified at 700px across markup, CSS, GSAP, and glyph routing.
 - `npm run check` and `npm run build` pass cleanly (0 errors, 0 warnings, 0 hints).
-- All 26 Playwright tests passed across both desktop (Chromium) and mobile (iPhone 13 / Chromium) projects.
-
-## Round 3 implementation details
-
-- Serpentine line traversal: right-to-left on line 0, left-to-right on line 1.
-- Draw the entire outer contour of every character.
-- Draw inner counters for `R`, `D`, and `O`; hide the endpoint while transitioning through glyph fill.
-- Sparse visible transitions:
-  - Pair 1 (`USERS`): `0-3(R) -> 0-2(E)` across the facing edge gap (R left spine to E bottom arm right edge, $\Delta y \approx 0.28\text{px}$).
-  - Pair 2 (`DON'T`): `1-2(N) -> 1-1(O)` on desktop RTL and `1-1(O) -> 1-2(N)` on mobile LTR across the facing edge gap (N left spine to O right belly, $\Delta y \approx 1\text{px}$).
-  - Pair 3 (`SEE.`): `2-1(E) -> 2-2(E)` on mobile/LTR and fallback `2-2(E) -> 2-1(E)` on desktop/RTL across the double-E gap ($\Delta y \approx 0.01\text{px}$).
-- All visible connectors stay entirely in inter-letter negative space with length ratios $\le 1.002\times$ direct distance.
-- Zero diagonal chords cutting across letter interiors.
-- Protected sticky header: when `scrollY > 40`, the fixed header becomes compact with an opaque `#030305` background (`z-index: 100`), ensuring glyphs that scroll up to the top of the viewport never show through behind `HEROKEYVN` or navigation controls.
+- All 32 Playwright tests pass across both `desktop` and `mobile` projects.
 
 ## Automated verification evidence
 
@@ -54,18 +71,28 @@ Verified facts from the current implementation:
   npm run build
   npx playwright test
   ```
-- Automated Test Results: 26/26 passed across `desktop` (13/13) and `mobile` (13/13).
-- Visual evidence captured:
-  - `design-explorations/screenshots/glyph-trace/desktop-before.png` (scrollY 650)
-  - `design-explorations/screenshots/glyph-trace/desktop-entry.png` (scrollY 850)
-  - `design-explorations/screenshots/glyph-trace/desktop-mid.png` (scrollY 1075)
-  - `design-explorations/screenshots/glyph-trace/desktop-exit.png` (scrollY 1310)
-  - `design-explorations/screenshots/glyph-trace/desktop-after.png` (scrollY 1450)
-  - `design-explorations/screenshots/glyph-trace/desktop-header-after.png` (scrollY 1450, header band crop)
-  - `design-explorations/screenshots/glyph-trace/mobile-before.png` (scrollY 540)
-  - `design-explorations/screenshots/glyph-trace/mobile-entry.png` (scrollY 670)
-  - `design-explorations/screenshots/glyph-trace/mobile-mid.png` (scrollY 880)
-  - `design-explorations/screenshots/glyph-trace/mobile-exit.png` (scrollY 1100)
-  - `design-explorations/screenshots/glyph-trace/mobile-after.png` (scrollY 1250)
-  - `design-explorations/screenshots/glyph-trace/mobile-header-after.png` (scrollY 1250, header band crop)
-- Full documentation in `design-explorations/screenshots/glyph-trace/README.md`.
+- Automated Test Results: 32/32 passed across `desktop` (16/16) and `mobile` (16/16).
+- Visual evidence matrix captured in `design-explorations/screenshots/glyph-trace/`:
+  - `1920-hero-initial.png` (scrollY 0)
+  - `1920-hero-mid.png` (scrollY 460)
+  - `1920-boundary-handoff.png` (scrollY 620)
+  - `1440-hero-mid.png` (scrollY 450)
+  - `1440-boundary-handoff.png` (scrollY 600)
+  - `1440-glyph-completed.png` (scrollY 1450)
+  - `701-hero-mid.png` (scrollY 380)
+  - `701-boundary-handoff.png` (scrollY 520)
+  - `700-hero-mid.png` (scrollY 380)
+  - `700-boundary-handoff.png` (scrollY 520)
+  - `576-hero-mid.png` (scrollY 360)
+  - `576-boundary-handoff.png` (scrollY 510)
+  - `390-hero-mid.png` (scrollY 360)
+  - `390-boundary-handoff.png` (scrollY 510)
+  - `390-glyph-completed.png` (scrollY 1250)
+  - Legacy 5-state sequences and header crops (`desktop-*.png`, `mobile-*.png`) preserved.
+
+## Remaining risks & boundaries
+
+- **Center Aperture**: Kept strictly empty for a future procedural Three.js sculpture; no Three.js or WebGL added.
+- **Identity**: Identity strictly preserved as `HerokeyVN`.
+- **Public facts**: All facts sourced from `src/data/portfolio.ts`; no invented facts or metrics.
+- **Git Boundaries**: Changes committed locally only; no push or deploy. Unrelated user changes (`pnpm-lock.yaml`) preserved.

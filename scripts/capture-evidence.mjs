@@ -30,93 +30,148 @@ async function capture() {
 
     const browser = await chromium.launch({ channel: "chrome" });
 
-  const targets = [
-    {
-      name: "desktop",
-      viewport: { width: 1440, height: 900 },
-      isMobile: false,
-    },
-    {
-      name: "mobile",
-      viewport: { width: 390, height: 844 },
-      isMobile: true,
-    },
-  ];
+    // Round 4 regression capture matrix
+    const matrix = [
+      {
+        name: "1920",
+        viewport: { width: 1920, height: 927 },
+        frames: [
+          { state: "hero-initial", y: 0 },
+          { state: "hero-mid", y: 460 },
+          { state: "boundary-handoff", y: 620 },
+        ],
+      },
+      {
+        name: "1440",
+        viewport: { width: 1440, height: 900 },
+        frames: [
+          { state: "hero-mid", y: 450 },
+          { state: "boundary-handoff", y: 600 },
+          { state: "glyph-completed", y: 1450 },
+        ],
+      },
+      {
+        name: "701",
+        viewport: { width: 701, height: 800 },
+        frames: [
+          { state: "hero-mid", y: 380 },
+          { state: "boundary-handoff", y: 520 },
+        ],
+      },
+      {
+        name: "700",
+        viewport: { width: 700, height: 800 },
+        frames: [
+          { state: "hero-mid", y: 380 },
+          { state: "boundary-handoff", y: 520 },
+        ],
+      },
+      {
+        name: "576",
+        viewport: { width: 576, height: 800 },
+        frames: [
+          { state: "hero-mid", y: 360 },
+          { state: "boundary-handoff", y: 510 },
+        ],
+      },
+      {
+        name: "390",
+        viewport: { width: 390, height: 844 },
+        frames: [
+          { state: "hero-mid", y: 360 },
+          { state: "boundary-handoff", y: 510 },
+          { state: "glyph-completed", y: 1250 },
+        ],
+      },
+    ];
 
-  for (const target of targets) {
-    console.log(`Processing ${target.name}...`);
-    const page = await browser.newPage({
-      viewport: target.viewport,
-      deviceScaleFactor: 1,
-    });
-    await page.goto("http://127.0.0.1:4322");
-    await page.waitForFunction(() => document.querySelectorAll("[data-glyph-contour]").length === 17);
-    await page.waitForTimeout(500);
+    for (const item of matrix) {
+      console.log(`Processing ${item.name} (${item.viewport.width}x${item.viewport.height})...`);
+      const page = await browser.newPage({
+        viewport: item.viewport,
+        deviceScaleFactor: 1,
+      });
+      await page.goto("http://127.0.0.1:4322");
+      await page.waitForLoadState("domcontentloaded");
+      await page.waitForTimeout(300);
 
-    const timing = await page.evaluate(() => {
-      const contours = [...document.querySelectorAll("[data-glyph-contour]")];
-      const connectors = [...document.querySelectorAll("[data-glyph-connector]")];
-      const paths = [...document.querySelectorAll("[data-site-thread-segment]")];
-      return {
-        contourCount: contours.length,
-        connectorCount: connectors.length,
-        pathCount: paths.length,
-      };
-    });
-    console.log(`${target.name} elements:`, timing);
+      for (const frame of item.frames) {
+        await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), frame.y);
+        await page.waitForFunction((top) => Math.abs(window.scrollY - top) < 2, frame.y);
+        await page.waitForTimeout(300);
 
-    // Let us find the exact scroll values for the 5 states
-    // In our spec and previous run:
-    // desktop: before=650, entry=850, mid=1075, exit=1310, after=1450
-    // mobile: before=540, entry=670, mid=880, exit=1100, after=1250
-    const scrollStates = target.name === "desktop"
-      ? [
+        const filePath = path.join(OUT_DIR, `${item.name}-${frame.state}.png`);
+        await page.screenshot({ path: filePath, fullPage: false });
+        console.log(`Saved ${filePath} at scrollY ${frame.y}`);
+      }
+
+      await page.close();
+    }
+
+    // Also preserve legacy desktop and mobile before/entry/mid/exit/after captures for historical continuity
+    const legacyTargets = [
+      {
+        name: "desktop",
+        viewport: { width: 1440, height: 900 },
+        scrollStates: [
           { state: "before", y: 650 },
           { state: "entry", y: 850 },
           { state: "mid", y: 1075 },
           { state: "exit", y: 1310 },
           { state: "after", y: 1450 },
-        ]
-      : [
+        ],
+      },
+      {
+        name: "mobile",
+        viewport: { width: 390, height: 844 },
+        scrollStates: [
           { state: "before", y: 540 },
           { state: "entry", y: 670 },
           { state: "mid", y: 880 },
           { state: "exit", y: 1100 },
           { state: "after", y: 1250 },
-        ];
+        ],
+      },
+    ];
 
-    for (const { state, y } of scrollStates) {
-      await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), y);
-      await page.waitForFunction((top) => Math.abs(window.scrollY - top) < 2, y);
+    for (const target of legacyTargets) {
+      const page = await browser.newPage({
+        viewport: target.viewport,
+        deviceScaleFactor: 1,
+      });
+      await page.goto("http://127.0.0.1:4322");
+      await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(300);
 
-      const filePath = path.join(OUT_DIR, `${target.name}-${state}.png`);
-      await page.screenshot({ path: filePath, fullPage: false });
-      console.log(`Saved ${filePath} at scrollY ${y}`);
+      for (const { state, y } of target.scrollStates) {
+        await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), y);
+        await page.waitForFunction((top) => Math.abs(window.scrollY - top) < 2, y);
+        await page.waitForTimeout(200);
+
+        const filePath = path.join(OUT_DIR, `${target.name}-${state}.png`);
+        await page.screenshot({ path: filePath, fullPage: false });
+      }
+
+      const afterY = target.name === "desktop" ? 1450 : 1250;
+      await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), afterY);
+      await page.waitForFunction((top) => Math.abs(window.scrollY - top) < 2, afterY);
+      await page.waitForTimeout(200);
+
+      const headerBox = await page.locator("[data-site-header]").boundingBox();
+      if (headerBox) {
+        const headerCropPath = path.join(OUT_DIR, `${target.name}-header-after.png`);
+        await page.screenshot({
+          path: headerCropPath,
+          clip: {
+            x: 0,
+            y: 0,
+            width: target.viewport.width,
+            height: Math.ceil(headerBox.height + 30),
+          },
+        });
+      }
+      await page.close();
     }
-
-    // Capture header crop at submitted after state
-    const afterY = target.name === "desktop" ? 1450 : 1250;
-    await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), afterY);
-    await page.waitForFunction((top) => Math.abs(window.scrollY - top) < 2, afterY);
-    await page.waitForTimeout(300);
-
-    const headerBox = await page.locator("[data-site-header]").boundingBox();
-    console.log(`${target.name} header bounding box:`, headerBox);
-    const headerCropPath = path.join(OUT_DIR, `${target.name}-header-after.png`);
-    await page.screenshot({
-      path: headerCropPath,
-      clip: {
-        x: 0,
-        y: 0,
-        width: target.viewport.width,
-        height: Math.ceil(headerBox.height + 30),
-      },
-    });
-    console.log(`Saved header crop ${headerCropPath}`);
-
-    await page.close();
-  }
 
     await browser.close();
     console.log("All screenshots captured successfully.");

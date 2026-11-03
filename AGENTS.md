@@ -2,7 +2,7 @@
 
 ## Required Reading
 - Read `docs/agent-handoff.md` before touching source files.
-- Complete `docs/review-round-3-work-order.md` before treating the glyph thread as approved.
+- Complete `docs/review-round-4-responsive-work-order.md` before treating the narrative thread as approved.
 - Follow `docs/glyph-thread-implementation-spec.md` for the active typography-thread task.
 - Follow `docs/visual-qa-playbook.md` before claiming visual completion.
 - Treat `src/data/portfolio.ts` as the source of truth for professional facts.
@@ -44,7 +44,7 @@ npm run test:e2e
 
 ## Definition of Done
 - `npm run check`, `npm run build`, and desktop/mobile Playwright tests pass.
-- Visual review covers 1440×900 and 390×844 at before/entry/mid/exit/after states.
+- Visual review covers the Round 4 viewport matrix, including 1920×927, breakpoint-adjacent widths, and the existing 1440×900/390×844 states.
 - Reverse scroll, direct anchor navigation, resize, and reduced motion are verified.
 - Update the handoff and screenshot README with evidence and remaining risks.
 

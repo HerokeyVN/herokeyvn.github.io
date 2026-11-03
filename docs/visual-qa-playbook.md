@@ -17,6 +17,19 @@ Secondary engineering checks:
 | Resize desktop | 1180×760 | Responsive rebuild |
 | Resize mobile | 430×820 | Mobile reflow and baseline alignment |
 
+Responsive thread regression matrix:
+
+| Viewport | Purpose |
+|---:|---|
+| 1920×927 | Real-browser wide viewport reported by the user |
+| 1024×768 | Compressed desktop composition |
+| 701×800 / 700×800 | Both sides of the shared responsive threshold |
+| 601×800 / 600×800 | Guard against the former Hero/About breakpoint mismatch |
+| 576×800 | Narrow-window regression reported by the user |
+| 320×700 | Supported minimum width |
+
+At every matrix width, inspect normal motion. Reduced motion is a separate accessibility state and must not be used as evidence that normal-motion dash geometry is continuous.
+
 Use the production build for final evidence:
 
 ```bash
@@ -75,6 +88,9 @@ Record every capture's `scrollY` in the screenshot README.
 - The hidden line break reads naturally; no diagonal slash joins lines.
 - Hero-to-About and About-to-Experience continuations feel related.
 - The central Hero aperture remains available for a future 3D model.
+- Completed Hero path segments reach their transformed endpoints without floating gaps.
+- The Hero-to-About boundary uses a short deliberate handoff, not a long horizontal or viewport-edge cable.
+- Exactly one responsive Hero path set is visible, including at breakpoint-adjacent widths.
 
 ## Motion review
 

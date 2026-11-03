@@ -64,7 +64,7 @@ One line:    all glyphs right → left
 Three lines: right → left, left → right, right → left
 ```
 
-Visible connector count is `glyphCount - renderedLineCount`; each line break is a hidden weighted transition.
+Resolve the explicit desktop/mobile transition plan against this rendered order. Only 2–4 declared adjacent pairs are visible in a composition; every other same-line adjacency and every line break is a hidden weighted transition.
 
 ## 5. Junction selection
 
@@ -72,7 +72,7 @@ For every contour:
 
 1. Measure `getTotalLength()` after assigning its transform.
 2. Sample at least 120 evenly spaced distances in path-local space.
-3. Select the point with the smallest local Y as the top junction.
+3. For an outer contour participating in a declared visible pair, resolve its configured side/fraction anchor. Otherwise select the point with the smallest local Y as the fallback junction.
 4. Store local distance plus transformed document-space X/Y.
 
 For outer contours, this junction is both entry and exit of the closed trace. For inner contours, hide the endpoint during transitions to and from the counter.
@@ -110,10 +110,11 @@ outer contour → hidden in → inner contour → hidden out → connector/line 
 
 ### Same line
 
-- Connect only outer-contour junctions of adjacent glyphs in route order.
-- Use one shallow cubic Bézier with handles around 30% of horizontal distance.
-- Keep vertical lift minimal and consistent.
-- Reject a completed frame that reads as one typographic overline.
+- Render a visible connector only for an adjacent pair declared by the active desktop/mobile transition plan.
+- Represent every undeclared adjacency as weighted hidden travel with the endpoint marker hidden.
+- Connect only outer-contour junctions and keep the curve inside the local inter-letter gap.
+- Use one shallow cubic Bézier with handles around 30% of horizontal distance, adjusted when necessary to preserve outside-facing tangents.
+- Keep vertical lift minimal and reject a completed frame that reads as one typographic overline.
 
 ### Different lines
 
@@ -123,7 +124,8 @@ outer contour → hidden in → inner contour → hidden out → connector/line 
 
 ### Global continuation
 
-- Site segment 0 terminates exactly on the first routed glyph junction.
+- The Hero exit meets a short visible boundary handoff within 1 CSS pixel.
+- A weighted hidden segment may carry the route from that handoff to the first routed glyph junction. Hide both endpoint markers during this travel; do not expose a long viewport-edge cable merely to keep one SVG path geometrically continuous.
 - Site segment 1 starts exactly on the final routed glyph junction.
 - Lower-page segments retain their protected gutter routes.
 
@@ -194,8 +196,9 @@ Geometry:
 - 14 semantic glyph spans and 17 SVG contours.
 - Every transform matches glyph X, word-baseline Y, and computed scale within subpixel tolerance.
 - Every visible connector endpoint lies on its associated outer contour junction.
-- Connector count adapts to actual rendered line count.
-- Site entry/exit meet first/last glyph without a visible gap.
+- Each rendered composition has 2–4 planned visible glyph connectors; all remaining adjacencies consume progress as hidden segments.
+- Global entry/exit route continuity is explicit. Any gap between the boundary handoff and first glyph is a weighted hidden segment with hidden markers, never an accidental break in a visible path.
+- The Hero-to-About visible handoff stays within `min(220px, 18vw)` and hidden travel never exposes an endpoint marker.
 
 Behavior:
 
