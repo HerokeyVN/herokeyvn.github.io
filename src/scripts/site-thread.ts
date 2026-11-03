@@ -224,13 +224,38 @@ export function initSiteThread() {
     const first = glyphOrder[0]!.junctions[0]!, last = glyphOrder.at(-1)!.junctions[0]!;
     const stmt = document.querySelector(".about__statement"), prof = document.querySelector(".about__profile");
     const gapTop = stmt ? botOf(".about__statement") : aboutTop + 400, gapBot = prof ? topOf(".about__profile") : aboutTop + 650, crossY = (gapTop + gapBot) / 2;
-    const rightEdge = width - edge, startX = width * (1138 / 1440), startY = heroHeight;
+    const rightEdge = width - edge;
+
+    const heroExitPath = document.querySelector<SVGPathElement>(
+      isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
+    );
+    let startX = isMobile ? width * (308 / 390) : width * (1138 / 1440);
+    let startY = heroHeight;
+    if (heroExitPath) {
+      const p = heroExitPath.getPointAtLength(heroExitPath.getTotalLength());
+      const m = heroExitPath.getScreenCTM();
+      if (m) {
+        startX = p.x * m.a + p.y * m.c + m.e;
+        startY = p.x * m.b + p.y * m.d + m.f + scrollY;
+      }
+    }
+
+    const targetL = Math.min(170, width * 0.14);
+    const dx = isMobile ? -Math.min(15, width * 0.025) : Math.min(30, width * 0.025);
+    const dy = Math.sqrt(Math.max(100, targetL * targetL - dx * dx));
+    const cp1x = startX + dx * 0.25;
+    const cp1y = startY + dy * 0.45;
+    const cp2x = startX + dx * 0.8;
+    const cp2y = startY + dy * 0.85;
+    const endX = startX + dx;
+    const endY = startY + dy;
+
     const p1 = document.querySelector("#fb-messenger-e2ee"), p2 = document.querySelector("#sky-sheet-store"), p3 = document.querySelector("#sky-auto-piano");
     const p1Bot = p1 ? botOf("#fb-messenger-e2ee") : projTop + 600, p2Top = p2 ? topOf("#sky-sheet-store") : projTop + 700, p2Bot = p2 ? botOf("#sky-sheet-store") : projTop + 1600, p3Top = p3 ? topOf("#sky-auto-piano") : projTop + 1700;
     const emailBox = document.querySelector(".contact__email-btn")?.getBoundingClientRect();
     const contactTargetX = emailBox ? Math.max(edge, emailBox.left - 24) : width * 0.25, contactTargetY = emailBox ? emailBox.top + scrollY + emailBox.height / 2 : contactTop + 300;
     const pathData = [
-      `M ${startX} ${startY} C ${rightEdge} ${startY + 20}, ${rightEdge} ${startY + 50}, ${rightEdge} ${startY + 70} C ${rightEdge} ${first.y - fontSize * 0.35}, ${first.x + fontSize * 0.35} ${first.y - fontSize * 0.18}, ${first.x} ${first.y}`,
+      `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`,
       `M ${last.x} ${last.y} C ${last.x + fontSize * 0.35} ${last.y}, ${rightEdge} ${last.y + fontSize * 0.35}, ${rightEdge} ${last.y + fontSize * 0.5} C ${rightEdge} ${gapTop - 40}, ${rightEdge} ${gapTop - 20}, ${rightEdge} ${gapTop} C ${rightEdge} ${crossY}, ${edge} ${crossY}, ${edge} ${gapBot} C ${edge} ${gapBot + 40}, ${edge} ${expTop - 40}, ${edge} ${expTop}`,
       `M ${edge} ${expTop} C ${edge * 0.6} ${expTop + (projTop - expTop) * 0.3}, ${edge * 0.6} ${expTop + (projTop - expTop) * 0.7}, ${edge} ${projTop}`,
       `M ${edge} ${projTop} C ${edge} ${p1Bot - 40}, ${edge} ${p1Bot - 10}, ${edge} ${p1Bot} C ${edge} ${(p1Bot + p2Top) / 2}, ${rightEdge} ${(p1Bot + p2Top) / 2}, ${rightEdge} ${p2Top} C ${rightEdge} ${p2Bot - 40}, ${rightEdge} ${p2Bot - 10}, ${rightEdge} ${p2Bot} C ${rightEdge} ${(p2Bot + p3Top) / 2}, ${edge} ${(p2Bot + p3Top) / 2}, ${edge} ${p3Top} C ${edge} ${skillsTop - 40}, ${edge} ${skillsTop - 10}, ${edge} ${skillsTop}`,
@@ -239,13 +264,24 @@ export function initSiteThread() {
     ];
     const siteSegments = paths.map((element, index) => { element.setAttribute("d", pathData[index]!); const length = element.getTotalLength(); return { element, drawLength: length, weight: length, startDistance: 0, kind: "open", layer: "site", startScroll: 0, endScroll: 1 } satisfies Segment; });
     const s0 = Math.round(heroHeight * 0.55), s1 = Math.max(s0 + 80, Math.round(first.y - winHeight * 0.72));
+    const sHandoffEnd = s0 + Math.max(30, Math.round((s1 - s0) * 0.45));
+    const handoffHiddenSegment: Segment = {
+      drawLength: 0,
+      weight: Math.max(50, fontSize * 0.8),
+      startDistance: 0,
+      kind: "hidden",
+      layer: "site",
+      startScroll: 0,
+      endScroll: 1,
+    };
     const s2 = Math.max(s1 + Math.max(480, winHeight * 0.62), Math.round(last.y - winHeight * 0.34));
     const s3 = Math.max(s2 + 160, Math.round(expTop - winHeight * 0.55)), s4 = Math.max(s3 + 60, Math.round(projTop - winHeight * 0.55)), s5 = Math.max(s4 + 60, Math.round(skillsTop - winHeight * 0.55)), s6 = Math.max(s5 + 60, Math.round(contactTop - winHeight * 0.55)), s7 = Math.max(s6 + 60, height - winHeight);
-    setTiming(siteSegments[0]!, s0, s1);
+    setTiming(siteSegments[0]!, s0, sHandoffEnd);
+    setTiming(handoffHiddenSegment, sHandoffEnd, s1);
     const headlineWeight = headlineSegments.reduce((sum, segment) => sum + segment.weight, 0); let cursor = s1;
     headlineSegments.forEach((segment) => { const end = cursor + (s2 - s1) * segment.weight / headlineWeight; setTiming(segment, cursor, end); cursor = end; });
     setTiming(siteSegments[1]!, s2, s3); setTiming(siteSegments[2]!, s3, s4); setTiming(siteSegments[3]!, s4, s5); setTiming(siteSegments[4]!, s5, s6); setTiming(siteSegments[5]!, s6, s7);
-    segments = [siteSegments[0]!, ...headlineSegments, ...siteSegments.slice(1)];
+    segments = [siteSegments[0]!, handoffHiddenSegment, ...headlineSegments, ...siteSegments.slice(1)];
     render(scrollY);
   };
 

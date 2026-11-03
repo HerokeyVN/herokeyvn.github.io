@@ -1,7 +1,30 @@
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
-type ThreadSegment = { element: SVGPathElement; length: number };
+type ThreadSegment = { element: SVGPathElement; screenLength: number };
+
+function getScreenLength(path: SVGPathElement, samples = 60): number {
+  const matrix = path.getScreenCTM();
+  const len = path.getTotalLength();
+  let total = 0;
+  let prevX = 0;
+  let prevY = 0;
+  for (let i = 0; i <= samples; i++) {
+    const pt = path.getPointAtLength((len * i) / samples);
+    let sx = pt.x;
+    let sy = pt.y;
+    if (matrix) {
+      sx = pt.x * matrix.a + pt.y * matrix.c + matrix.e;
+      sy = pt.x * matrix.b + pt.y * matrix.d + matrix.f;
+    }
+    if (i > 0) {
+      total += Math.hypot(sx - prevX, sy - prevY);
+    }
+    prevX = sx;
+    prevY = sy;
+  }
+  return total;
+}
 
 export function initHeroThread() {
   const hero = document.querySelector<HTMLElement>("[data-thread-scene='hero']");
@@ -12,8 +35,8 @@ export function initHeroThread() {
 
   media.add(
     {
-      desktop: "(min-width: 601px)",
-      mobile: "(max-width: 600px)",
+      desktop: "(min-width: 701px)",
+      mobile: "(max-width: 700px)",
       reduceMotion: "(prefers-reduced-motion: reduce)",
     },
     (context) => {
@@ -29,22 +52,51 @@ export function initHeroThread() {
         return;
       }
 
-      const segments: ThreadSegment[] = paths.map((element) => ({ element, length: element.getTotalLength() }));
-      const totalLength = segments.reduce((total, segment) => total + segment.length, 0);
+      paths.forEach((p) => {
+        if (!p.getAttribute("pathLength")) p.setAttribute("pathLength", "1");
+      });
+
+      let segments: ThreadSegment[] = [];
+      let totalLength = 0;
+
+      const measure = () => {
+        segments = paths.map((element) => ({ element, screenLength: getScreenLength(element) }));
+        totalLength = segments.reduce((total, segment) => total + segment.screenLength, 0);
+      };
+
+      measure();
+
       const entrance = { progress: 0 };
       let scrollProgress = 0;
 
       const render = () => {
         const effectiveProgress = Math.min(1, Math.max(entrance.progress, 0.35 + scrollProgress * 0.65));
         let remaining = totalLength * effectiveProgress;
-        segments.forEach(({ element, length }) => {
-          const visible = Math.max(0, Math.min(length, remaining));
-          gsap.set(element, {
-            strokeDasharray: `${length} ${length}`,
-            strokeDashoffset: length - visible,
-            visibility: visible > 0 ? "visible" : "hidden",
-          });
-          remaining -= length;
+
+        segments.forEach(({ element, screenLength }) => {
+          const segProgress = screenLength > 0 ? Math.max(0, Math.min(1, remaining / screenLength)) : 0;
+          remaining -= screenLength;
+
+          if (segProgress >= 1) {
+            // Completion invariant: remove dash pattern so stretch transforms never clip tail
+            gsap.set(element, {
+              strokeDasharray: "none",
+              strokeDashoffset: 0,
+              visibility: "visible",
+            });
+          } else if (segProgress > 0) {
+            gsap.set(element, {
+              strokeDasharray: "1 1",
+              strokeDashoffset: 1 - segProgress,
+              visibility: "visible",
+            });
+          } else {
+            gsap.set(element, {
+              strokeDasharray: "1 1",
+              strokeDashoffset: 1,
+              visibility: "hidden",
+            });
+          }
         });
       };
 
@@ -82,12 +134,19 @@ export function initHeroThread() {
         render();
       };
 
+      const onResize = () => {
+        measure();
+        render();
+      };
+
       window.addEventListener("scroll", onScroll, { passive: true });
+      window.addEventListener("resize", onResize, { passive: true });
 
       return () => {
         entranceTween.kill();
         trigger.kill();
         window.removeEventListener("scroll", onScroll);
+        window.removeEventListener("resize", onResize);
       };
     },
   );
