@@ -2,7 +2,7 @@
 
 ## Required Reading
 - Read `docs/agent-handoff.md` before touching source files.
-- Complete `docs/review-round-2-work-order.md` before treating the glyph thread as approved.
+- Complete `docs/review-round-3-work-order.md` before treating the glyph thread as approved.
 - Follow `docs/glyph-thread-implementation-spec.md` for the active typography-thread task.
 - Follow `docs/visual-qa-playbook.md` before claiming visual completion.
 - Treat `src/data/portfolio.ts` as the source of truth for professional facts.
