@@ -7,6 +7,7 @@ import Projects from "../components/Projects.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import SkillsEducation from "../components/SkillsEducation.astro";
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { ABOUT_GLYPH_INSTANCES } from "../data/about-glyphs";
 
 const title = "HerokeyVN — Backend Developer | Node.js & TypeScript";
 const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh City building Node.js and TypeScript systems, identity services, and practical applications.";
@@ -16,8 +17,18 @@ const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh 
   <SiteHeader />
   <main id="main-content">
     <svg class="site-thread" data-site-thread aria-hidden="true">
-      {[0, 1, 2, 3, 4].map((segment) => <path data-site-thread-segment={segment}></path>)}
+      {[0, 1, 2, 3, 4, 5].map((segment) => (
+        <path data-site-thread-segment={segment}></path>
+      ))}
       <circle data-site-thread-end r="4"></circle>
+    </svg>
+    <svg class="glyph-thread" data-glyph-thread aria-hidden="true">
+      <!-- Copyright 2019 The Syne Project Authors. Glyph contours extracted from Syne 700 under SIL OFL 1.1. -->
+      {ABOUT_GLYPH_INSTANCES.map((glyph) => glyph.contours.map((d, contourIndex) => (
+        <path data-glyph-key={glyph.key} data-glyph-contour={contourIndex} d={d}></path>
+      )))}
+      <g data-glyph-connectors></g>
+      <circle data-glyph-thread-end r="4"></circle>
     </svg>
     <Hero />
     <About />
@@ -34,16 +45,20 @@ const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh 
       background-color: var(--void);
     }
 
-    .site-thread {
+    .site-thread,
+    .glyph-thread {
       position: absolute;
       inset: 0 auto auto 0;
-      z-index: 3;
       width: 100%;
       pointer-events: none;
       overflow: visible;
     }
 
-    .site-thread path {
+    .site-thread { z-index: 3; }
+    .glyph-thread { z-index: 5; }
+
+    .site-thread path,
+    .glyph-thread :global(path) {
       fill: none;
       stroke: var(--accent-red);
       stroke-width: 2px;
@@ -52,10 +67,12 @@ const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh 
       vector-effect: non-scaling-stroke;
     }
 
-    .site-thread circle { fill: var(--accent-red); }
+    .site-thread circle,
+    .glyph-thread circle { fill: var(--accent-red); }
 
     @media (max-width: 600px) {
-      .site-thread path { stroke-width: 1.7px; }
+      .site-thread path,
+      .glyph-thread :global(path) { stroke-width: 1.7px; }
     }
 
   </style>
