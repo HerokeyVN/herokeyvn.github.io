@@ -79,7 +79,7 @@ export function initSiteThread() {
 
       // Explicit lifecycle: hide handoff once fully occluded by the compact header
       if (typeof segment.hideAfterScroll === "number" && currentScroll >= segment.hideAfterScroll) {
-        gsap.set(segment.element, { visibility: "hidden" });
+        segment.element.style.visibility = "hidden";
         return;
       }
 
@@ -91,11 +91,19 @@ export function initSiteThread() {
           visibility: progress > 0 ? "visible" : "hidden",
         });
       } else {
-        gsap.set(segment.element, {
-          strokeDasharray: `${segment.drawLength} ${segment.drawLength}`,
-          strokeDashoffset: segment.drawLength - visible,
-          visibility: progress > 0 ? "visible" : "hidden",
-        });
+        if (progress <= 0) {
+          segment.element.style.strokeDasharray = `0 ${segment.drawLength}`;
+          segment.element.style.strokeDashoffset = "0";
+          segment.element.style.visibility = "hidden";
+        } else if (progress >= 1) {
+          segment.element.style.strokeDasharray = "none";
+          segment.element.style.strokeDashoffset = "0";
+          segment.element.style.visibility = "visible";
+        } else {
+          segment.element.style.strokeDasharray = `${visible} ${segment.drawLength}`;
+          segment.element.style.strokeDashoffset = "0";
+          segment.element.style.visibility = "visible";
+        }
       }
     });
 

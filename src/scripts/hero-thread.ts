@@ -83,12 +83,13 @@ export function initHeroThread() {
             element.style.strokeDashoffset = "0";
             element.style.visibility = "visible";
           } else if (segProgress > 0) {
-            element.style.strokeDasharray = "1 1";
-            element.style.strokeDashoffset = String(1 - segProgress);
+            // Gap is 2 to prevent dash wrap under non-uniform viewport stretch (preserveAspectRatio="none")
+            element.style.strokeDasharray = `${segProgress} 2`;
+            element.style.strokeDashoffset = "0";
             element.style.visibility = "visible";
           } else {
-            element.style.strokeDasharray = "1 1";
-            element.style.strokeDashoffset = "1";
+            element.style.strokeDasharray = "0 2";
+            element.style.strokeDashoffset = "0";
             element.style.visibility = "hidden";
           }
         });
