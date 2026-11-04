@@ -1,9 +1,59 @@
 # Full glyph-trace and responsive thread validation
 
-> **Review Round 5 Completed & Verified**: Repaired temporal continuity and handoff lifecycle per `docs/review-round-5-motion-work-order.md`. Decoupled handoff persistence via runtime occlusion scheduling, tightened handoff geometry ($L \le \min(72\text{px}, 12vw)$, $dy/dx \le 2.5$), eliminated dead Hero entrance tween, verified bidirectional lifecycle sampling (A → B → C → D and reverse), and generated forward/reverse motion video evidence. Full suite passes with 38/38 tests.
+> **Review Round 6 Completed & Verified**: Resolved open-path dash-wrap defect per `docs/review-round-6-open-path-dash-work-order.md`. Replaced repeating dashoffset animation on partial open paths with normalized `strokeDashoffset = "0"` and stretched gap `strokeDasharray = "${progress} 2"` in `hero-thread.ts` (protecting against non-scaling-stroke viewport stretch) and `${visible} ${length}` in `site-thread.ts`. Dense stroke topology sampling (`isPointInStroke()` at 200 points) proves single contiguous prefix starting at 0 with zero detached suffixes across 1920×927, 1440×900, 700×800, and 390×844. Suite passes 42/42 tests. Normal-motion video evidence captured at 1920×927 and 390×844 with 12 extracted frames.
 
-Build: `feat/portfolio-redesign` review round 5 temporal continuity repair
+Build: `feat/portfolio-redesign` review round 6 open-path dash topology repair
 Date: 2026-11-04
+
+## Round 6 Motion Evidence Matrix
+
+### Video Recordings
+
+Recordings are captured with Playwright browser video under normal motion:
+
+| File | Viewport | Direction & Content | Sequence Timestamps | Result |
+|---|---:|---|---|---|
+| `round-6-1920x927-hero-open-path.webm` | 1920×927 | Hero seg 2 oscillation, forward through glyph D, reverse to 0 | 00:00–00:03 (slow oscillation across seg 2: scrollY 80 → 180 → 90 → 260 → 440), 00:03–00:05 (forward seam handoff B → hidden C → glyph D), 00:05–00:08 (reverse scroll D → C → B → Hero seg 2 → 0) | PASS |
+| `round-6-390x844-hero-open-path.webm` | 390×844 | Mobile Hero seg 2 oscillation, forward through glyph D, reverse to 0 | 00:00–00:03 (mobile oscillation across seg 2: scrollY 70 → 160 → 80 → 210 → 380), 00:03–00:05 (forward mobile handoff B → hidden C → glyph D), 00:05–00:08 (reverse scroll D → C → B → Hero seg 2 → 0) | PASS |
+
+### Phase Extraction Frames (Round 6)
+
+Stored in `design-explorations/screenshots/glyph-trace/round-6/`:
+
+- `round-6-1920-hero-seg2-early.png`: Desktop scrollY 100. Hero segment 2 early activation: aperture loop clean, exactly one prefix growing from start, zero painted suffix near bottom-right.
+- `round-6-1920-hero-seg2-mid.png`: Desktop scrollY 260. Hero segment 2 mid activation: smooth contiguous prefix continuing downward.
+- `round-6-1920-hero-seg2-late.png`: Desktop scrollY 440. Hero segment 2 approaching section seam cleanly.
+- `round-6-1920-handoff-b.png`: Desktop Phase B seam handoff ($L \approx 57\text{px}$) drawing into right negative space.
+- `round-6-1920-hidden-c.png`: Desktop Phase C hidden travel: handoff occluded behind compact header, endpoint markers hidden (`autoAlpha: 0`).
+- `round-6-1920-glyph-d.png`: Desktop Phase D glyph trace actively outlining `USERS DON'T SEE.`.
+- `round-6-390-hero-seg2-early.png`: Mobile scrollY 80. Mobile Hero segment 2 early activation: single growing prefix, zero detached suffix.
+- `round-6-390-hero-seg2-mid.png`: Mobile scrollY 210. Mobile mid activation cleanly descending.
+- `round-6-390-hero-seg2-late.png`: Mobile scrollY 380. Mobile segment 2 reaching bottom seam.
+- `round-6-390-handoff-b.png`: Mobile Phase B handoff ($L \approx 38\text{px}$) attached to mobile exit.
+- `round-6-390-hidden-c.png`: Mobile Phase C hidden travel under compact header.
+- `round-6-390-glyph-d.png`: Mobile Phase D glyph trace starting at first letter contour.
+
+## Round 6 Open-Path Topology Fixes Verified
+
+1. **Elimination of Dash-Wrap Suffix on Stretched Viewports**:
+   - Replaced repeating dashoffset animation (`strokeDasharray: "1 1"`, `strokeDashoffset: 1 - progress`) in `src/scripts/hero-thread.ts` with zero offset and stretched gap: `strokeDashoffset = "0"` and `strokeDasharray = "${segProgress} 2"`.
+   - Identified and resolved non-uniform viewBox stretch pitfall: with `viewBox="0 0 1440 900"`, `preserveAspectRatio="none"`, and `vector-effect: non-scaling-stroke`, the physical screen length at 1920×927 is $1.333\times$ the author user units. A gap of `1.0` in normalized coordinates left the final $150\text{px}$ exposed to a repeating dash at normalized position 0.83. Setting the gap to `2` guarantees the unpainted gap exceeds any stretched stroke length across all viewports up to 2560px+.
+   - Unstarted segments (`segProgress <= 0`) set `strokeDasharray = "0 2"`, `strokeDashoffset = "0"`, and `visibility = "hidden"`.
+   - Completed segments (`segProgress >= 1`) strip dash styling (`strokeDasharray = "none"`, `strokeDashoffset = "0"`).
+
+2. **Zero-Offset Contiguous Topology on Site-Thread and Connectors**:
+   - Audited all open-path renderers in `src/scripts/site-thread.ts` (`siteSegments` and `glyphConnectors`).
+   - Enforced zero dashoffset with local SVG path lengths: partial state uses `strokeDashoffset = "0"` and `strokeDasharray = "${visible} ${segment.drawLength}"`.
+   - Unstarted state sets `visibility: "hidden"` and `strokeDasharray = "0 ${segment.drawLength}"`.
+   - Completed state sets `visibility: "visible"` and `strokeDasharray = "none"`.
+   - Closed glyph contours retain their intentional junction-wrap behavior (`kind === "closed"` with `strokeDashoffset = -segment.startDistance`).
+
+3. **Dense Rendered-Topology Verification (42/42 Passing Tests)**:
+   - Added `hero segment 2 eliminates dash-wrap suffix and paints single contiguous prefix across early activation` to `tests/portfolio.spec.ts`.
+   - Added `verifies contiguous open-path topology across hero, handoff, glyph connectors, and responsive viewports`.
+   - Samples 200 evenly spaced points with `SVGGeometryElement.isPointInStroke()` and `getPointAtLength()` along active partial paths across 1920×927, 1440×900, 700×800, and 390×844.
+   - Asserts painted indices form exactly 1 contiguous group starting at index 0, with zero samples painted in the far-end interval (`83..100` completely eliminated), and confirms reverse scroll produces identical topology.
+   - Expanded total automated suite from 38 to 42 tests (21 desktop, 21 mobile).
 
 ## Round 5 Motion Evidence Matrix
 
@@ -125,12 +175,12 @@ Stored in `design-explorations/screenshots/glyph-trace/round-5/`:
      - `hero draw progress maintains completion invariant across responsive viewports` (verified across 9 viewports: 1920×927, 1440×900, 1024×768, 701×800, 700×800, 601×800, 600×800, 576×800, 390×844).
      - `boundary handoff meets hero exit and respects negative-space corridor` (verified across 5 viewports: 1920×927, 1440×900, 700×800, 576×800, 390×844).
      - `responsive threshold transitions rebuild cleanly without errors` (verified dynamic step resizing 701 → 700 → 601 → 600 → 701).
-   - Test suite count increased from 26 to 38 tests; 38/38 tests pass across desktop (Chromium) and mobile (iPhone 13 / Chromium).
+   - Test suite count increased from 26 to 42 tests; 42/42 tests pass across desktop (Chromium) and mobile (iPhone 13 / Chromium).
 
 ## Automated Checks
-- `npm run check`: pass (23 files, 0 errors, 0 warnings, 0 hints)
+- `npm run check`: pass (24 files, 0 errors, 0 warnings, 0 hints)
 - `npm run build`: pass (static build in `dist/` verified)
-- `npx playwright test`: 38/38 passed across `desktop` (19/19) and `mobile` (19/19)
+- `npx playwright test`: 42/42 passed across `desktop` (21/21) and `mobile` (21/21)
 
 ## Boundaries & Architecture Integrity
 - Center Hero aperture remains empty for future Three.js model; no Three.js or WebGL added.

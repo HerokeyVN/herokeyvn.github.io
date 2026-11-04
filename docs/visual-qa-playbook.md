@@ -106,6 +106,8 @@ Perform these manually at both primary viewports:
 
 For Hero-to-About work, record normal-motion forward and reverse scroll at 1920×927 and 390×844. Inspect the recordings frame by frame. The required sequence is: attached Hero tail → attached short seam handoff → fully hidden travel → endpoint re-entry on the first glyph. Static screenshots cannot approve this sequence.
 
+For every open-path drawing stage, pause at early, middle, and late partial progress. One active open segment must read as one growing stroke from its authored start. Explicitly inspect the path's far endpoint: it must remain unpainted until the growing prefix reaches it. A detached suffix that shrinks while the prefix grows is dash wrapping, not a second intentional thread.
+
 Reject the implementation if:
 
 - the endpoint jumps across the screen;
@@ -119,6 +121,7 @@ Reject the implementation if:
 - the handoff and first glyph are visible simultaneously;
 - a stroke disappears in uncovered empty space instead of behind the header, outside the viewport, or behind an existing mask;
 - document-space endpoints match but the screen recording still reads as separate Hero, edge-stroke, and glyph animations.
+- a partially drawn open path contains more than one painted interval, exposes its far endpoint early, or shows a detached suffix shrinking backward.
 
 ## Readability and collision review
 
@@ -156,6 +159,7 @@ Required assertions:
 - geometry stays aligned after resize;
 - global thread avoids protected content;
 - scroll progress reverses cleanly.
+- for visible partial open paths, dense `SVGGeometryElement.isPointInStroke()` sampling finds one contiguous painted interval beginning at normalized path distance 0 and no painted samples beyond expected progress plus line-cap tolerance.
 
 Do not fix a flaky geometry test by increasing timeout or relaxing a multi-pixel tolerance until logs prove runtime geometry is correct and only test scheduling is wrong.
 

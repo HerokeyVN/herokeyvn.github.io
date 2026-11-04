@@ -142,9 +142,20 @@ progress = clamp(0, 1, (scrollY - startScroll) / (endScroll - startScroll))
 Open path:
 
 ```text
-strokeDasharray = length length
-strokeDashoffset = length - length * progress
+progress <= 0: hidden
+0 < progress < 1, with pathLength="1":
+  strokeDasharray = progress 1
+  strokeDashoffset = 0
+progress >= 1:
+  strokeDasharray = none
+  strokeDashoffset = 0
 ```
+
+The partial state must paint exactly one contiguous prefix from normalized distance `0` through `progress`. A repeating dash whose phase wraps a second painted interval onto the far end of an open path is forbidden. Screen-space length remains valid for duration/weight calculations, but must not be confused with the normalized paint interval. Equivalent mask or clip-path implementations are acceptable only if they satisfy the same rendered-topology invariant.
+
+For an open path that is not normalized with `pathLength="1"`, the equivalent partial pattern is `strokeDasharray = (length * progress) length` with `strokeDashoffset = 0`. The second value is a full-path gap, preventing repetition before the path ends.
+
+Apply this invariant to every `kind: "open"` renderer, including Hero segments, global site-thread segments, and visible glyph connectors. Closed glyph contours intentionally wrap around their selected junction and retain the closed-contour formula below.
 
 Closed contour:
 
@@ -205,6 +216,7 @@ Geometry:
 Behavior:
 
 - Forward, reverse, rapid direction change, direct anchor navigation, and resize yield the same state for the same `scrollY`.
+- Every partially drawn open path has exactly one painted connected interval beginning at the path start; no detached suffix is visible at the path end.
 - No endpoint teleport is visible; endpoint is hidden for hidden segments.
 - Segment completion and segment persistence are independent: the inter-scene handoff does not remain exposed after its occluded transition into hidden travel.
 - All contours complete before the Experience section owns the route.
