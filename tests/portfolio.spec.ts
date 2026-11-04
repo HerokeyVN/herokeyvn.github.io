@@ -481,13 +481,13 @@ test("synchronizes the full glyph trace with scroll position and reverses cleanl
   await page.locator("#about").scrollIntoViewIfNeeded();
   await page.waitForFunction(() => {
     const path = document.querySelector<SVGPathElement>("[data-site-thread-segment='2']")!;
-    return Number.parseFloat(path.style.strokeDashoffset || "0") >= path.getTotalLength() - 1;
+    return path.style.visibility === "hidden" || Number.parseFloat(path.style.strokeDasharray?.split(" ")[0] || "1") < 0.01;
   });
 
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await page.waitForFunction(() => {
     const first = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']")!;
-    return Number.parseFloat(first.style.strokeDashoffset || "0") >= first.getTotalLength() - 1;
+    return first.style.visibility === "hidden" || Number.parseFloat(first.style.strokeDasharray?.split(" ")[0] || "1") < 0.01;
   });
   const visibleAtTop = await page.locator("[data-glyph-contour]").evaluateAll((paths) =>
     paths.filter((path) => (path as SVGPathElement).style.visibility !== "hidden").length,
@@ -1050,25 +1050,30 @@ test("initial hero state renders statically and deterministically without dead t
     const selector = isMobile ? "[data-thread-segment-mobile='0']" : "[data-thread-segment='0']";
     const p0 = document.querySelector<SVGPathElement>(selector)!;
     const offset0 = parseFloat(p0.style.strokeDashoffset || getComputedStyle(p0).strokeDashoffset);
+    const dash0 = p0.style.strokeDasharray || getComputedStyle(p0).strokeDasharray;
+    const progress0 = parseFloat(dash0.split(" ")[0] || "0");
     const vis0 = getComputedStyle(p0).visibility;
     return {
       offset0,
+      progress0,
       vis0,
     };
   });
 
   expect(initial.vis0).toBe("visible");
-  expect(initial.offset0).toBeGreaterThan(0.01);
-  expect(initial.offset0).toBeLessThan(0.99);
+  expect(initial.offset0).toBe(0);
+  expect(initial.progress0).toBeGreaterThan(0.01);
+  expect(initial.progress0).toBeLessThan(0.99);
 
   await page.waitForTimeout(150);
   const afterWait = await page.evaluate(() => {
     const isMobile = window.innerWidth <= 700;
     const selector = isMobile ? "[data-thread-segment-mobile='0']" : "[data-thread-segment='0']";
     const p0 = document.querySelector<SVGPathElement>(selector)!;
-    return parseFloat(p0.style.strokeDashoffset || getComputedStyle(p0).strokeDashoffset);
+    const dash0 = p0.style.strokeDasharray || getComputedStyle(p0).strokeDasharray;
+    return parseFloat(dash0.split(" ")[0] || "0");
   });
-  expect(afterWait).toBe(initial.offset0);
+  expect(afterWait).toBe(initial.progress0);
 
   // 3. Navigate directly to #about and back to #top to ensure determinism
   await page.locator("#about").scrollIntoViewIfNeeded();
@@ -1085,9 +1090,10 @@ test("initial hero state renders statically and deterministically without dead t
     const isMobile = window.innerWidth <= 700;
     const selector = isMobile ? "[data-thread-segment-mobile='0']" : "[data-thread-segment='0']";
     const p0 = document.querySelector<SVGPathElement>(selector)!;
-    return parseFloat(p0.style.strokeDashoffset || getComputedStyle(p0).strokeDashoffset);
+    const dash0 = p0.style.strokeDasharray || getComputedStyle(p0).strokeDasharray;
+    return parseFloat(dash0.split(" ")[0] || "0");
   });
-  expect(Math.abs(afterNav - initial.offset0)).toBeLessThan(0.001);
+  expect(Math.abs(afterNav - initial.progress0)).toBeLessThan(0.001);
 
   // 4. Reload page to confirm initial deterministic state
   await page.reload();
@@ -1098,7 +1104,397 @@ test("initial hero state renders statically and deterministically without dead t
     const isMobile = window.innerWidth <= 700;
     const selector = isMobile ? "[data-thread-segment-mobile='0']" : "[data-thread-segment='0']";
     const p0 = document.querySelector<SVGPathElement>(selector)!;
-    return parseFloat(p0.style.strokeDashoffset || getComputedStyle(p0).strokeDashoffset);
+    const dash0 = p0.style.strokeDasharray || getComputedStyle(p0).strokeDasharray;
+    return parseFloat(dash0.split(" ")[0] || "0");
   });
-  expect(Math.abs(afterReload - initial.offset0)).toBeLessThan(0.001);
+  expect(Math.abs(afterReload - initial.progress0)).toBeLessThan(0.001);
+});
+
+test("hero segment 2 eliminates dash-wrap suffix and paints single contiguous prefix across early activation", async ({ page }) => {
+  const viewports = [
+    { width: 1920, height: 927 },
+    { width: 1440, height: 900 },
+    { width: 700, height: 800 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
+    await page.evaluate(() => document.fonts.ready);
+
+    // Test early activation scroll positions where Round 5 suffered from wrapped suffix
+    const scrollPositions = [80, 100, 120, 140, 160, 200];
+
+    for (const scrollY of scrollPositions) {
+      // Forward scroll to scrollY
+      await page.evaluate((y) => {
+        window.scrollTo({ top: y, behavior: "instant" });
+        window.dispatchEvent(new Event("scroll"));
+      }, scrollY);
+
+      const forwardTopology = await page.evaluate(() => {
+        const isMobile = window.innerWidth <= 700;
+        const selector = isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']";
+        const p2 = document.querySelector<SVGPathElement>(selector);
+        if (!p2) return null;
+
+        const vis = getComputedStyle(p2).visibility;
+        const dash = p2.style.strokeDasharray || getComputedStyle(p2).strokeDasharray;
+        const offset = p2.style.strokeDashoffset || getComputedStyle(p2).strokeDashoffset;
+
+        const total = p2.getTotalLength();
+        const N = 200;
+        const painted: number[] = [];
+        for (let i = 0; i <= N; i++) {
+          const pt = p2.getPointAtLength((total * i) / N);
+          if (p2.isPointInStroke(pt)) {
+            painted.push(i);
+          }
+        }
+
+        const groups: { start: number; end: number; len: number }[] = [];
+        let curStart = -1;
+        for (let i = 0; i <= N; i++) {
+          if (painted.includes(i)) {
+            if (curStart === -1) curStart = i;
+          } else {
+            if (curStart !== -1) {
+              groups.push({ start: curStart, end: i - 1, len: i - curStart });
+              curStart = -1;
+            }
+          }
+        }
+        if (curStart !== -1) {
+          groups.push({ start: curStart, end: N, len: N - curStart + 1 });
+        }
+
+        const farEndPainted = painted.some((idx) => idx >= N * 0.75);
+
+        return {
+          vis,
+          dash,
+          offset,
+          paintedCount: painted.length,
+          groups,
+          farEndPainted,
+          firstIndex: painted[0] ?? -1,
+          lastIndex: painted.at(-1) ?? -1,
+        };
+      });
+
+      if (forwardTopology && forwardTopology.vis === "visible" && forwardTopology.paintedCount > 0) {
+        // Must be exactly one contiguous group
+        expect(forwardTopology.groups.length).toBe(1);
+        // Must start at index 0 (path distance 0)
+        expect(forwardTopology.firstIndex).toBe(0);
+        // Dash offset must be 0 (no phase wrap)
+        expect(Number.parseFloat(forwardTopology.offset)).toBe(0);
+        // No detached suffix at the far end (indices >= 150 out of 200)
+        expect(forwardTopology.farEndPainted).toBe(false);
+      }
+
+      // Reverse symmetry check: scroll down further, then scroll back to scrollY
+      await page.evaluate((y) => {
+        window.scrollTo({ top: y + 80, behavior: "instant" });
+        window.dispatchEvent(new Event("scroll"));
+      }, scrollY);
+
+      await page.evaluate((y) => {
+        window.scrollTo({ top: y, behavior: "instant" });
+        window.dispatchEvent(new Event("scroll"));
+      }, scrollY);
+
+      const reverseTopology = await page.evaluate(() => {
+        const isMobile = window.innerWidth <= 700;
+        const selector = isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']";
+        const p2 = document.querySelector<SVGPathElement>(selector);
+        if (!p2) return null;
+
+        const total = p2.getTotalLength();
+        const N = 200;
+        const painted: number[] = [];
+        for (let i = 0; i <= N; i++) {
+          const pt = p2.getPointAtLength((total * i) / N);
+          if (p2.isPointInStroke(pt)) {
+            painted.push(i);
+          }
+        }
+
+        const groups: { start: number; end: number; len: number }[] = [];
+        let curStart = -1;
+        for (let i = 0; i <= N; i++) {
+          if (painted.includes(i)) {
+            if (curStart === -1) curStart = i;
+          } else {
+            if (curStart !== -1) {
+              groups.push({ start: curStart, end: i - 1, len: i - curStart });
+              curStart = -1;
+            }
+          }
+        }
+        if (curStart !== -1) {
+          groups.push({ start: curStart, end: N, len: N - curStart + 1 });
+        }
+
+        return {
+          paintedCount: painted.length,
+          groups,
+          firstIndex: painted[0] ?? -1,
+          lastIndex: painted.at(-1) ?? -1,
+        };
+      });
+
+      if (forwardTopology && reverseTopology) {
+        expect(reverseTopology.paintedCount).toBe(forwardTopology.paintedCount);
+        expect(reverseTopology.firstIndex).toBe(forwardTopology.firstIndex);
+        expect(reverseTopology.lastIndex).toBe(forwardTopology.lastIndex);
+        expect(reverseTopology.groups.length).toBe(forwardTopology.groups.length);
+      }
+    }
+  }
+});
+
+test("verifies contiguous open-path topology across hero, handoff, glyph connectors, and responsive viewports", async ({ page }) => {
+  const viewports = [
+    { width: 1920, height: 927 },
+    { width: 1440, height: 900 },
+    { width: 700, height: 800 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
+    await page.evaluate(() => document.fonts.ready);
+
+    // 1. Hero open paths at distinct partial fractions (0.10, 0.25, 0.50, 0.75, 0.95)
+    const heroH = await page.evaluate(() => {
+      const hero = document.getElementById("top") || document.querySelector(".hero");
+      return hero ? hero.getBoundingClientRect().height : window.innerHeight;
+    });
+    const maxHeroScroll = Math.round(heroH * 0.55);
+    const heroTestFractions = [0.1, 0.25, 0.5, 0.75, 0.95];
+
+    for (const frac of heroTestFractions) {
+      const targetScroll = Math.round(maxHeroScroll * frac);
+
+      const checkHero = async (y: number) => {
+        await page.evaluate((topY) => {
+          window.scrollTo({ top: topY, behavior: "instant" });
+          window.dispatchEvent(new Event("scroll"));
+        }, y);
+
+        return page.evaluate(() => {
+          const isMobile = window.innerWidth <= 700;
+          const selector = isMobile ? "[data-thread-segment-mobile]" : "[data-thread-segment]";
+          const paths = [...document.querySelectorAll<SVGPathElement>(selector)].sort((a, b) => {
+            const idxA = Number(a.dataset.threadSegment || a.dataset.threadSegmentMobile || 0);
+            const idxB = Number(b.dataset.threadSegment || b.dataset.threadSegmentMobile || 0);
+            return idxA - idxB;
+          });
+
+          const activePath = paths.find((p) => {
+            const vis = getComputedStyle(p).visibility;
+            const dash = p.style.strokeDasharray;
+            return vis === "visible" && dash && dash !== "none";
+          });
+
+          if (!activePath) return null;
+
+          const total = activePath.getTotalLength();
+          const N = 200;
+          const painted: number[] = [];
+          for (let i = 0; i <= N; i++) {
+            const pt = activePath.getPointAtLength((total * i) / N);
+            if (activePath.isPointInStroke(pt)) painted.push(i);
+          }
+
+          const groups: { start: number; end: number }[] = [];
+          let curStart = -1;
+          for (let i = 0; i <= N; i++) {
+            if (painted.includes(i)) {
+              if (curStart === -1) curStart = i;
+            } else {
+              if (curStart !== -1) {
+                groups.push({ start: curStart, end: i - 1 });
+                curStart = -1;
+              }
+            }
+          }
+          if (curStart !== -1) groups.push({ start: curStart, end: N });
+
+          return {
+            pathIndex: paths.indexOf(activePath),
+            paintedCount: painted.length,
+            groups,
+            firstIndex: painted[0] ?? -1,
+            lastIndex: painted.at(-1) ?? -1,
+            offset: activePath.style.strokeDashoffset,
+          };
+        });
+      };
+
+      const forwardState = await checkHero(targetScroll);
+      if (forwardState && forwardState.paintedCount > 0) {
+        expect(forwardState.groups.length).toBe(1);
+        expect(forwardState.firstIndex).toBe(0);
+        expect(Number.parseFloat(forwardState.offset)).toBe(0);
+
+        // Verify reverse symmetry at identical scrollY
+        await page.evaluate((topY) => {
+          window.scrollTo({ top: topY + 50, behavior: "instant" });
+          window.dispatchEvent(new Event("scroll"));
+        }, targetScroll);
+
+        const reverseState = await checkHero(targetScroll);
+        expect(reverseState?.groups.length).toBe(1);
+        expect(reverseState?.firstIndex).toBe(0);
+        expect(reverseState?.paintedCount).toBe(forwardState.paintedCount);
+      }
+    }
+
+    // 2. Handoff open path ([data-site-thread-segment='0']) during Phase B
+    const s0 = Math.round(heroH * 0.55);
+    const isMobileVp = vp.width <= 700;
+    const sHandoffEnd = s0 + (isMobileVp ? 35 : 50);
+
+    for (const frac of [0.25, 0.5, 0.75]) {
+      const handoffScroll = Math.round(s0 + (sHandoffEnd - s0) * frac);
+
+      const sampleHandoff = async (y: number) => {
+        await page.evaluate((topY) => {
+          window.scrollTo({ top: topY, behavior: "instant" });
+          window.dispatchEvent(new Event("scroll"));
+        }, y);
+
+        return page.evaluate(() => {
+          const handoff = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']");
+          if (!handoff) return null;
+          const vis = getComputedStyle(handoff).visibility;
+          if (vis === "hidden") return null;
+
+          const total = handoff.getTotalLength();
+          const N = 200;
+          const painted: number[] = [];
+          for (let i = 0; i <= N; i++) {
+            const pt = handoff.getPointAtLength((total * i) / N);
+            if (handoff.isPointInStroke(pt)) painted.push(i);
+          }
+
+          const groups: { start: number; end: number }[] = [];
+          let curStart = -1;
+          for (let i = 0; i <= N; i++) {
+            if (painted.includes(i)) {
+              if (curStart === -1) curStart = i;
+            } else {
+              if (curStart !== -1) {
+                groups.push({ start: curStart, end: i - 1 });
+                curStart = -1;
+              }
+            }
+          }
+          if (curStart !== -1) groups.push({ start: curStart, end: N });
+
+          return {
+            paintedCount: painted.length,
+            groups,
+            firstIndex: painted[0] ?? -1,
+            lastIndex: painted.at(-1) ?? -1,
+            offset: handoff.style.strokeDashoffset,
+          };
+        });
+      };
+
+      const forwardHandoff = await sampleHandoff(handoffScroll);
+      if (forwardHandoff && forwardHandoff.paintedCount > 0) {
+        expect(forwardHandoff.groups.length).toBe(1);
+        expect(forwardHandoff.firstIndex).toBe(0);
+        expect(Number.parseFloat(forwardHandoff.offset)).toBe(0);
+
+        // Reverse check
+        await page.evaluate((topY) => {
+          window.scrollTo({ top: topY + 20, behavior: "instant" });
+          window.dispatchEvent(new Event("scroll"));
+        }, handoffScroll);
+
+        const reverseHandoff = await sampleHandoff(handoffScroll);
+        expect(reverseHandoff?.groups.length).toBe(1);
+        expect(reverseHandoff?.firstIndex).toBe(0);
+        expect(reverseHandoff?.paintedCount).toBe(forwardHandoff.paintedCount);
+      }
+    }
+
+    // 3. Visible glyph connectors ([data-glyph-connector])
+    const connectorTopology = await page.evaluate(() => {
+      const connectors = [...document.querySelectorAll<SVGPathElement>("[data-glyph-connector]")];
+      let activeSample: {
+        y: number;
+        paintedCount: number;
+        groups: { start: number; end: number }[];
+        firstIndex: number;
+        lastIndex: number;
+        offset: string;
+      } | null = null;
+
+      // Scan About section scroll range to find a partially drawing connector
+      for (let y = 800; y < 2200; y += 12) {
+        window.scrollTo({ top: y, behavior: "instant" });
+        window.dispatchEvent(new Event("scroll"));
+
+        for (const conn of connectors) {
+          const vis = getComputedStyle(conn).visibility;
+          const dash = conn.style.strokeDasharray;
+          if (vis === "visible" && dash && dash !== "none") {
+            const parts = dash.split(/[ ,]+/).map(Number);
+            const dashLength = parts[0] ?? 0;
+            const gapLength = parts[1] ?? 0;
+            if (dashLength > 0 && dashLength < gapLength) {
+              const total = conn.getTotalLength();
+              const N = 200;
+              const painted: number[] = [];
+              for (let i = 0; i <= N; i++) {
+                const pt = conn.getPointAtLength((total * i) / N);
+                if (conn.isPointInStroke(pt)) painted.push(i);
+              }
+
+              const groups: { start: number; end: number }[] = [];
+              let curStart = -1;
+              for (let i = 0; i <= N; i++) {
+                if (painted.includes(i)) {
+                  if (curStart === -1) curStart = i;
+                } else {
+                  if (curStart !== -1) {
+                    groups.push({ start: curStart, end: i - 1 });
+                    curStart = -1;
+                  }
+                }
+              }
+              if (curStart !== -1) groups.push({ start: curStart, end: N });
+
+              activeSample = {
+                y,
+                paintedCount: painted.length,
+                groups,
+                firstIndex: painted[0] ?? -1,
+                lastIndex: painted.at(-1) ?? -1,
+                offset: conn.style.strokeDashoffset,
+              };
+              break;
+            }
+          }
+        }
+        if (activeSample) break;
+      }
+      return activeSample;
+    });
+
+    if (connectorTopology && connectorTopology.paintedCount > 0) {
+      expect(connectorTopology.groups.length).toBe(1);
+      expect(connectorTopology.firstIndex).toBe(0);
+      expect(Number.parseFloat(connectorTopology.offset)).toBe(0);
+    }
+  }
 });
