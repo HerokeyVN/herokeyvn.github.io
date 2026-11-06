@@ -3,77 +3,166 @@ import type { Project } from "../data/portfolio";
 
 interface Props { project: Project; }
 const { project } = Astro.props;
+
+// Motif path builders. They run at build time and return deterministic
+// `d` strings; the scroll drawing itself lives in src/scripts/project-threads.ts.
+
+// Sine phrase as a polyline sampled every 10px. Ends on the centre line
+// when (x1 - x0) is a whole number of wavelengths.
+const sinePath = (x0: number, x1: number, y: number, amp: number, wavelength: number) => {
+  let d = `M ${x0} ${y}`;
+  for (let x = x0 + 10; x <= x1; x += 10) {
+    const yy = y + amp * Math.sin((2 * Math.PI * (x - x0)) / wavelength);
+    d += ` L ${x} ${Math.round(yy * 10) / 10}`;
+  }
+  return d;
+};
+
+// Archimedean spiral, radius r0 to r1 over `turns` turns, sampled every 6 degrees.
+const spiralPath = (cx: number, cy: number, r0: number, r1: number, turns: number) => {
+  const totalAngle = turns * 2 * Math.PI;
+  const steps = Math.round(totalAngle / (Math.PI / 30));
+  let d = "";
+  for (let i = 0; i <= steps; i++) {
+    const angle = (totalAngle * i) / steps;
+    const r = r0 + ((r1 - r0) * i) / steps;
+    const x = Math.round((cx + r * Math.cos(angle)) * 10) / 10;
+    const y = Math.round((cy + r * Math.sin(angle)) * 10) / 10;
+    d += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
+  }
+  return d;
+};
+
+// Staircase of 15 even steps. `accents` holds 0-based step indexes that rise higher.
+// Returns the path plus the accent peak positions (middle of each accent step top run).
+const stepsPath = (x0: number, baseY: number, w: number, rise: number, accentExtra: number, accents: number[]) => {
+  let d = `M ${x0} ${baseY}`;
+  let x = x0;
+  let y = baseY;
+  const peaks: { cx: number; cy: number }[] = [];
+  for (let i = 0; i < 15; i++) {
+    y -= rise + (accents.includes(i) ? accentExtra : 0);
+    d += ` L ${x} ${y}`;
+    if (accents.includes(i)) peaks.push({ cx: x + w / 2, cy: y });
+    x += w;
+    d += ` L ${x} ${y}`;
+  }
+  return { d, endX: x, endY: y, peaks };
+};
+
+// Rising diagonal zigzag arpeggio.
+const zigzagPath = (x0: number, y0: number, x1: number, teeth: number, drop: number, rise: number) => {
+  let d = `M ${x0} ${y0}`;
+  let x = x0;
+  let y = y0;
+  const w = (x1 - x0) / teeth;
+  for (let i = 0; i < teeth; i++) {
+    x += w / 2;
+    y -= rise;
+    d += ` L ${x} ${y}`;
+    x += w / 2;
+    y += drop;
+    d += ` L ${x} ${y}`;
+  }
+  return d;
+};
+
+// 01 E2EE: straight from A, tangled knot, straight to B. The knot is
+// candidate B from the crossing-count probe: 4 self-crossings in a
+// compact box, straight runs clearly distinct from the tangle.
+const E2EE_KNOT =
+  "C 370 190, 430 190, 450 240 C 470 290, 430 350, 390 330 C 350 310, 370 230, 420 220 " +
+  "C 470 210, 510 250, 500 300 C 490 350, 440 370, 430 320 C 420 280, 500 280, 570 280";
+const E2EE_D = `M 60 280 L 330 280 ${E2EE_KNOT} L 840 280`;
+// Mobile knot: the desktop knot scaled 170/240 around its centre (450, 280)
+// into the mobile box (200-370, 280).
+const E2EE_KNOT_MOBILE =
+  "C 228.3 216.3, 270.8 216.3, 285 251.7 C 299.2 287.1, 270.8 329.6, 242.5 315.4 " +
+  "C 214.2 301.3, 228.3 244.6, 263.8 237.5 C 299.2 230.4, 327.5 258.8, 320.4 294.2 " +
+  "C 313.3 329.6, 277.9 343.8, 270.8 308.3 C 263.8 280, 320.4 280, 370 280";
+const E2EE_D_MOBILE = `M 30 280 L 200 280 ${E2EE_KNOT_MOBILE} L 530 280`;
+
+// 02 Sky Sheet Store: sine phrase, spiral, straight exit.
+const sheetWave = sinePath(40, 780, 280, 60, 130);
+const sheetSpiral = spiralPath(950, 280, 8, 46, 3).replace(/^M [\d.]+ [\d.]+/, "");
+const SHEET_D = `${sheetWave} L 958 280${sheetSpiral} L 1400 320`;
+const sheetWaveMobile = sinePath(30, 300, 280, 50, 90);
+const sheetSpiralMobile = spiralPath(430, 280, 8, 40, 2).replace(/^M [\d.]+ [\d.]+/, "");
+const SHEET_D_MOBILE = `${sheetWaveMobile} L 438 280${sheetSpiralMobile} L 540 330`;
+
+// 03 Sky Auto Piano: 15 steps with taller accents at steps 3, 8, 12, then a zigzag arpeggio.
+const PIANO_ACCENTS = [2, 7, 11];
+const pianoSteps = stepsPath(60, 440, 40, 6, 35, PIANO_ACCENTS);
+const PIANO_D = `${pianoSteps.d} ${zigzagPath(pianoSteps.endX, pianoSteps.endY, 880, 5, 34, 46).replace(/^M [\d.]+ [\d.]+/, "")}`;
+const pianoStepsMobile = stepsPath(30, 440, 28, 5, 30, PIANO_ACCENTS);
+const PIANO_D_MOBILE = `${pianoStepsMobile.d} ${zigzagPath(pianoStepsMobile.endX, pianoStepsMobile.endY, 540, 3, 28, 40).replace(/^M [\d.]+ [\d.]+/, "")}`;
+// Accent peaks: middle of the accent step top run. Dots fade in when the draw reaches them.
+const pianoDots = pianoSteps.peaks;
+const pianoDotsMobile = pianoStepsMobile.peaks;
 ---
 
 {project.slug === "fb-messenger-e2ee" && (
-  <div class="project-visual project-visual--protocol" data-project-visual role="img" aria-label="Signal and Noise protocol system composition">
-    <svg viewBox="0 0 900 560" aria-hidden="true">
-      <circle class="protocol-orbit protocol-orbit--outer" cx="450" cy="280" r="214"></circle>
-      <circle class="protocol-orbit" cx="450" cy="280" r="128"></circle>
-      <circle class="protocol-core" cx="450" cy="280" r="42"></circle>
-      <path class="protocol-route" d="M80 390 C198 390 201 196 337 214 C420 225 399 350 493 345 C596 339 605 159 820 175"></path>
-      <circle class="protocol-node" cx="337" cy="214" r="5"></circle>
-      <circle class="protocol-node" cx="493" cy="345" r="5"></circle>
+  <div class="project-thread-stage" data-project-thread-stage>
+    <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="fb-messenger-e2ee" data-variant="desktop" viewBox="0 0 900 560" aria-hidden="true">
+      <path class="project-thread-path" d={E2EE_D}></path>
+      <circle class="project-thread-node" data-thread-node="a" cx="60" cy="280" r="5"></circle>
+      <circle class="project-thread-node" data-thread-node="b" cx="840" cy="280" r="5"></circle>
+    </svg>
+    <svg class="project-thread-svg project-thread-svg--mobile" data-project-thread="fb-messenger-e2ee" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
+      <path class="project-thread-path" d={E2EE_D_MOBILE}></path>
+      <circle class="project-thread-node" data-thread-node="a" cx="30" cy="280" r="5"></circle>
+      <circle class="project-thread-node" data-thread-node="b" cx="530" cy="280" r="5"></circle>
     </svg>
     <span class="visual-label visual-label--top">Signal Protocol / Key state</span>
     <span class="visual-label visual-label--bottom">Noise transport / Encrypted flow</span>
-    <strong class="visual-mark">E2EE</strong>
   </div>
 )}
 
 {project.slug === "sky-sheet-store" && (
-  <div class="project-visual project-visual--product" data-project-visual>
-    <img src="/images/projects/sky-sheet-store.webp" alt="Sky Sheet Store music sheet discovery platform" width="1280" height="800" loading="lazy" decoding="async" />
-    <span class="visual-index">02 / Live platform</span>
-    <span class="visual-caption">Discovery · Sharing · Practice</span>
+  <div class="project-thread-stage" data-project-thread-stage>
+    <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="sky-sheet-store" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
+      <path class="project-thread-path" d={SHEET_D}></path>
+    </svg>
+    <svg class="project-thread-svg project-thread-svg--mobile" data-project-thread="sky-sheet-store" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
+      <path class="project-thread-path" d={SHEET_D_MOBILE}></path>
+    </svg>
+    <span class="visual-label visual-label--top">02 / Live platform</span>
+    <span class="visual-label visual-label--bottom">Discovery · Sharing · Practice</span>
   </div>
 )}
 
 {project.slug === "sky-auto-piano" && (
-  <div class="project-visual project-visual--piano" data-project-visual role="img" aria-label="Sky Auto Piano playback sequence composition">
-    <div class="piano-grid" aria-hidden="true">
-      {Array.from({ length: 15 }).map((_, index) => <span class:list={["piano-key", index === 2 || index === 7 || index === 11 ? "piano-key--active" : ""]}>{String(index + 1).padStart(2, "0")}</span>)}
-    </div>
-    <div class="piano-identity">
-      <img src="/images/projects/sky-auto-piano.png" alt="" width="88" height="88" loading="lazy" />
-      <strong>Sky Auto Piano</strong>
-      <span>Desktop playback automation</span>
-    </div>
+  <div class="project-thread-stage" data-project-thread-stage>
+    <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="sky-auto-piano" data-variant="desktop" viewBox="0 0 900 560" aria-hidden="true">
+      <path class="project-thread-path" d={PIANO_D}></path>
+      {pianoDots.map((dot) => (
+        <circle class="project-thread-node" data-thread-dot cx={dot.cx} cy={dot.cy} r="4.5"></circle>
+      ))}
+    </svg>
+    <svg class="project-thread-svg project-thread-svg--mobile" data-project-thread="sky-auto-piano" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
+      <path class="project-thread-path" d={PIANO_D_MOBILE}></path>
+      {pianoDotsMobile.map((dot) => (
+        <circle class="project-thread-node" data-thread-dot cx={dot.cx} cy={dot.cy} r="4.5"></circle>
+      ))}
+    </svg>
+    <span class="visual-label visual-label--bottom">Desktop playback automation</span>
   </div>
 )}
 
 <style>
-  .project-visual { position: relative; min-height: clamp(24rem, 43vw, 39rem); overflow: hidden; border: 1px solid var(--border-subtle); background: #060608; }
-  .project-visual--protocol { background: radial-gradient(circle at 50% 50%, #1a1726 0, #0b0a10 46%, #050507 78%); }
-  .project-visual--protocol svg { position: absolute; inset: 5%; width: 90%; height: 90%; }
-  .protocol-orbit { fill: none; stroke: rgba(239, 237, 230, 0.16); stroke-width: 1; }
-  .protocol-orbit--outer { stroke: rgba(239, 237, 230, 0.08); }
-  .protocol-core { fill: none; stroke: rgba(255, 60, 26, 0.55); stroke-width: 1; }
-  .protocol-route { fill: none; stroke: var(--accent-red); stroke-width: 2; }
-  .protocol-node { fill: var(--accent-red); }
-  .visual-label, .visual-index, .visual-caption { position: absolute; z-index: 2; color: var(--text-muted); font: 400 0.62rem/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .project-thread-stage { position: relative; min-height: clamp(24rem, 43vw, 39rem); overflow: hidden; border: 1px solid var(--border-subtle); background: #060608; }
+  .project-thread-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .project-thread-svg--mobile { display: none; }
+  .project-thread-path { fill: none; stroke: var(--accent-red); stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .project-thread-node { fill: var(--accent-red); }
+  .visual-label { position: absolute; z-index: 2; color: var(--text-muted); font: 400 0.62rem/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
   .visual-label--top { top: 1.5rem; left: 1.5rem; }
   .visual-label--bottom { right: 1.5rem; bottom: 1.5rem; }
-  .visual-mark { position: absolute; top: 50%; left: 50%; color: var(--text-primary); font: 700 clamp(4rem, 8vw, 8rem)/1 var(--font-display); letter-spacing: -0.08em; transform: translate(-50%, -50%); }
 
-  .project-visual--product::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, rgba(3, 3, 5, 0.82)); pointer-events: none; }
-  .project-visual--product img { width: 100%; height: 100%; min-height: inherit; object-fit: cover; object-position: center top; filter: saturate(0.72) contrast(1.05); }
-  .visual-index { top: 1.5rem; left: 1.5rem; padding: 0.45rem 0.65rem; color: var(--text-primary); background: rgba(3, 3, 5, 0.75); }
-  .visual-caption { right: 1.5rem; bottom: 1.5rem; color: var(--text-primary); }
-
-  .project-visual--piano { display: grid; place-items: center; background: radial-gradient(circle at 50% 46%, #201b2c 0, #0a090e 48%, #050507 78%); }
-  .piano-grid { position: absolute; inset: 8%; display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; opacity: 0.8; }
-  .piano-key { display: flex; align-items: flex-end; padding: 0.65rem; border: 1px solid rgba(239, 237, 230, 0.1); color: #77747b; font: 400 0.56rem/1 var(--font-mono); }
-  .piano-key--active { border-color: rgba(255, 60, 26, 0.6); background: rgba(255, 60, 26, 0.08); color: var(--accent-red); }
-  .piano-identity { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; padding: 2rem; background: rgba(3, 3, 5, 0.72); text-align: center; }
-  .piano-identity img { width: 5.5rem; height: 5.5rem; margin-bottom: 1rem; }
-  .piano-identity strong { font: 700 clamp(2rem, 4vw, 4rem)/1 var(--font-display); letter-spacing: -0.055em; }
-  .piano-identity span { margin-top: 0.75rem; color: var(--text-muted); font: 400 0.62rem/1.4 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; }
-
-  @media (max-width: 600px) {
-    .project-visual { min-height: 23rem; }
-    .project-visual--product img { object-position: 38% top; }
-    .piano-grid { inset: 5%; gap: 0.3rem; }
-    .piano-key { padding: 0.35rem; }
+  @media (max-width: 700px) {
+    .project-thread-stage { min-height: 23rem; }
+    .project-thread-svg--desktop { display: none; }
+    .project-thread-svg--mobile { display: block; }
+    .project-thread-path { stroke-width: 1.7px; }
   }
 </style>

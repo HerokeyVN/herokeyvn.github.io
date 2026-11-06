@@ -81,13 +81,16 @@ const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh 
     import { initMotion } from "../scripts/motion";
     import { initHeroThread } from "../scripts/hero-thread";
     import { initSiteThread } from "../scripts/site-thread";
+    import { initProjectThreads } from "../scripts/project-threads";
 
     const destroyMotion = initMotion();
     const destroyHeroThread = initHeroThread();
     const destroySiteThread = initSiteThread();
+    const destroyProjectThreads = initProjectThreads();
     window.addEventListener("pagehide", () => {
       destroyHeroThread();
       destroySiteThread();
+      destroyProjectThreads();
       destroyMotion();
     }, { once: true });
   </script>
