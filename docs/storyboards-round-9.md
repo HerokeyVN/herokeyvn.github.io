@@ -234,9 +234,11 @@ artist/transcriber line, difficulty + language pills, and the stats strip
 (BPM 292 · Duration 3:51 · Note Count 684 · Notes/Sec 2.96 · Unique Keys 15/15 ·
 Chord Count 89). Right rail: Open Player, Download, Share Sheet, Favorite (as
 labelled buttons/rows, matching the live page's actions). The thread travels from
-the card's position into the cover panel and wraps once around the stats strip,
-then points at "Open Player". Meaning: one song, selected and ready to play; the
-product, not an abstraction, is the visual focus.
+the card's position into the cover panel, dips to the central play button, then
+runs up-right under the stats strip toward "Open Player" — it does NOT loop
+around the stats strip (the loop was cut in the fix round because it crossed the
+stat values; see the handoff fix-round entry). Meaning: one song, selected and
+ready to play; the product, not an abstraction, is the visual focus.
 
 **State 3 — Final (p = 1). "Practice."**
 Composition: the detail view gives way to the practice view: a real-time note
