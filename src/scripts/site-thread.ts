@@ -11,7 +11,6 @@ type Segment = {
   layer: "site" | "glyph";
   startScroll: number;
   endScroll: number;
-  hideAfterScroll?: number;
 };
 type Junction = { x: number; y: number; distance: number };
 type GlyphRecord = { key: string; left: number; top: number; baselineY: number; scale: number; paths: SVGPathElement[]; junctions: Junction[]; lineIndex: number };
@@ -24,7 +23,7 @@ export function initSiteThread() {
   const connectorGroup = document.querySelector<SVGGElement>("[data-glyph-connectors]");
   const siteEnd = document.querySelector<SVGCircleElement>("[data-site-thread-end]");
   const glyphEnd = document.querySelector<SVGCircleElement>("[data-glyph-thread-end]");
-  if (!svg || !glyphSvg || paths.length !== 6 || !connectorGroup || !siteEnd || !glyphEnd) return () => undefined;
+  if (!svg || !glyphSvg || paths.length !== 7 || !connectorGroup || !siteEnd || !glyphEnd) return () => undefined;
 
   gsap.registerPlugin(ScrollTrigger);
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -33,7 +32,6 @@ export function initSiteThread() {
   let trigger: ScrollTrigger | undefined;
   let s0 = 0;
   let sHandoffEnd = 0;
-  let sOccluded = 0;
   let sGlyphStart = 0;
   let s2 = 0;
 
@@ -58,12 +56,15 @@ export function initSiteThread() {
       return;
     }
 
-    // Diagnostic phase contract: hero | handoff | hidden | glyph
-    let phase: "hero" | "handoff" | "hidden" | "glyph" = "hero";
+    // Diagnostic phase contract: hero | handoff | connector | glyph
+    // The connector keeps the thread visible from the handoff end to the
+    // first glyph junction. There is no hidden phase: the earlier hidden
+    // travel read as a missing thread segment (gap probe 2026-11-06).
+    let phase: "hero" | "handoff" | "connector" | "glyph" = "hero";
     if (currentScroll >= sGlyphStart) {
       phase = "glyph";
-    } else if (currentScroll >= sOccluded) {
-      phase = "hidden";
+    } else if (currentScroll > sHandoffEnd) {
+      phase = "connector";
     } else if (currentScroll > s0) {
       phase = "handoff";
     } else {
@@ -76,12 +77,6 @@ export function initSiteThread() {
       const progress = gsap.utils.clamp(0, 1, (currentScroll - segment.startScroll) / (segment.endScroll - segment.startScroll));
       if (progress > 0 && progress < 1) active = { segment, progress };
       if (!segment.element) return;
-
-      // Explicit lifecycle: hide handoff once fully occluded by the compact header
-      if (typeof segment.hideAfterScroll === "number" && currentScroll >= segment.hideAfterScroll) {
-        segment.element.style.visibility = "hidden";
-        return;
-      }
 
       const visible = segment.drawLength * progress;
       if (segment.kind === "closed") {
@@ -107,7 +102,7 @@ export function initSiteThread() {
       }
     });
 
-    if (!active || active.segment.kind === "hidden" || !active.segment.element || phase === "hidden") {
+    if (!active || active.segment.kind === "hidden" || !active.segment.element) {
       gsap.set([siteEnd, glyphEnd], { autoAlpha: 0 });
       return;
     }
@@ -310,6 +305,18 @@ export function initSiteThread() {
     const endX = startX + dx;
     const endY = startY + dy;
 
+    // Hero-to-glyph connector: from the handoff end, across to the right
+    // gutter, down past the headline, then in to the first glyph junction.
+    // runY stays below the filled headline line so the approach never
+    // crosses copy; where the first junction sits less than 10px under that
+    // line, the run drops just below it and rises into the junction.
+    const filledSpan = document.querySelector<HTMLElement>(".about__title > span:first-child");
+    const filledBottom = filledSpan ? filledSpan.getBoundingClientRect().bottom + scrollY : aboutTop + 400;
+    const runY = Math.max(first.y, filledBottom + 10);
+    const connCp1x = rightEdge - (rightEdge - first.x) * 0.25;
+    const connCp2x = first.x + (rightEdge - first.x) * 0.3;
+    const connectorD = `M ${endX} ${endY} L ${rightEdge} ${endY} L ${rightEdge} ${runY} C ${connCp1x} ${runY}, ${connCp2x} ${runY}, ${first.x} ${first.y}`;
+
     const p1 = document.querySelector("#fb-messenger-e2ee"), p2 = document.querySelector("#sky-sheet-store"), p3 = document.querySelector("#sky-auto-piano");
     const p1Bot = p1 ? botOf("#fb-messenger-e2ee") : projTop + 600, p2Top = p2 ? topOf("#sky-sheet-store") : projTop + 700, p2Bot = p2 ? botOf("#sky-sheet-store") : projTop + 1600, p3Top = p3 ? topOf("#sky-auto-piano") : projTop + 1700;
     const emailBox = document.querySelector(".contact__email-btn")?.getBoundingClientRect();
@@ -321,6 +328,7 @@ export function initSiteThread() {
       `M ${edge} ${projTop} C ${edge} ${p1Bot - 40}, ${edge} ${p1Bot - 10}, ${edge} ${p1Bot} C ${edge} ${(p1Bot + p2Top) / 2}, ${rightEdge} ${(p1Bot + p2Top) / 2}, ${rightEdge} ${p2Top} C ${rightEdge} ${p2Bot - 40}, ${rightEdge} ${p2Bot - 10}, ${rightEdge} ${p2Bot} C ${rightEdge} ${(p2Bot + p3Top) / 2}, ${edge} ${(p2Bot + p3Top) / 2}, ${edge} ${p3Top} C ${edge} ${skillsTop - 40}, ${edge} ${skillsTop - 10}, ${edge} ${skillsTop}`,
       `M ${edge} ${skillsTop} C ${edge * 0.6} ${skillsTop + (contactTop - skillsTop) * 0.3}, ${edge * 0.6} ${skillsTop + (contactTop - skillsTop) * 0.7}, ${edge} ${contactTop}`,
       `M ${edge} ${contactTop} C ${edge} ${contactTop + 100}, ${contactTargetX - 60} ${contactTargetY - 40}, ${contactTargetX} ${contactTargetY}`,
+      connectorD,
     ];
     const siteSegments: Segment[] = paths.map((element, index) => {
       element.setAttribute("d", pathData[index]!);
@@ -334,49 +342,23 @@ export function initSiteThread() {
         layer: "site",
         startScroll: 0,
         endScroll: 1,
-        hideAfterScroll: undefined,
       };
     });
 
-    const headerEl = document.querySelector<HTMLElement>("[data-site-header]");
-    let headerHeight = 60;
-    if (headerEl) {
-      const wasCompact = headerEl.hasAttribute("data-compact");
-      const prevTransition = headerEl.style.transition;
-      headerEl.style.transition = "none";
-      headerEl.setAttribute("data-compact", "");
-      headerHeight = headerEl.offsetHeight;
-      headerEl.style.transition = prevTransition;
-      if (!wasCompact) headerEl.removeAttribute("data-compact");
-    }
-    const handoffBottom = endY;
-
     s0 = Math.round(heroHeight * 0.55);
     sHandoffEnd = s0 + (isMobile ? 35 : 50);
-    sOccluded = Math.ceil(handoffBottom - headerHeight);
-    sGlyphStart = Math.max(sOccluded + (isMobile ? 65 : 85), Math.round(first.y - winHeight * 0.72));
+    sGlyphStart = Math.max(sHandoffEnd + (isMobile ? 65 : 85), Math.round(first.y - winHeight * 0.72));
     const s1 = sGlyphStart;
 
-    siteSegments[0]!.hideAfterScroll = sOccluded;
     setTiming(siteSegments[0]!, s0, sHandoffEnd);
-
-    const handoffHiddenSegment: Segment = {
-      drawLength: 0,
-      weight: Math.max(50, fontSize * 0.8),
-      startDistance: 0,
-      kind: "hidden",
-      layer: "site",
-      startScroll: 0,
-      endScroll: 1,
-    };
-    setTiming(handoffHiddenSegment, sOccluded, sGlyphStart);
+    setTiming(siteSegments[6]!, sHandoffEnd, sGlyphStart);
 
     s2 = Math.max(s1 + Math.max(480, winHeight * 0.62), Math.round(last.y - winHeight * 0.34));
     const s3 = Math.max(s2 + 160, Math.round(expTop - winHeight * 0.55)), s4 = Math.max(s3 + 60, Math.round(projTop - winHeight * 0.55)), s5 = Math.max(s4 + 60, Math.round(skillsTop - winHeight * 0.55)), s6 = Math.max(s5 + 60, Math.round(contactTop - winHeight * 0.55)), s7 = Math.max(s6 + 60, height - winHeight);
     const headlineWeight = headlineSegments.reduce((sum, segment) => sum + segment.weight, 0); let cursor = s1;
     headlineSegments.forEach((segment) => { const end = cursor + (s2 - s1) * segment.weight / headlineWeight; setTiming(segment, cursor, end); cursor = end; });
     setTiming(siteSegments[1]!, s2, s3); setTiming(siteSegments[2]!, s3, s4); setTiming(siteSegments[3]!, s4, s5); setTiming(siteSegments[4]!, s5, s6); setTiming(siteSegments[5]!, s6, s7);
-    segments = [siteSegments[0]!, handoffHiddenSegment, ...headlineSegments, ...siteSegments.slice(1)];
+    segments = [siteSegments[0]!, siteSegments[6]!, ...headlineSegments, ...siteSegments.slice(1)];
     render(scrollY);
   };
 

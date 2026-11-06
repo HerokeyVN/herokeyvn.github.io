@@ -678,63 +678,52 @@ test("boundary handoff meets hero exit and respects negative-space corridor", as
     expect(handoffCheck.inNegativeSpace).toBe(true);
     expect(handoffCheck.displacementRatio).toBeLessThanOrEqual(2.5);
 
-    const hiddenInfo = await page.evaluate(() => {
+    const connectorInfo = await page.evaluate(() => {
       const isMobile = window.innerWidth <= 700;
-      const heroExit = document.querySelector<SVGPathElement>(
-        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
-      )!;
-      const p = heroExit.getPointAtLength(heroExit.getTotalLength());
-      const m = heroExit.getScreenCTM();
       const hero = document.getElementById("top") || document.querySelector(".hero");
       const heroH = hero ? hero.getBoundingClientRect().height : window.innerHeight;
-      const heroEndY = m ? p.x * m.b + p.y * m.d + m.f + scrollY : heroH;
-      const targetL = isMobile
-        ? Math.min(42, Math.max(34, window.innerWidth * 0.09))
-        : Math.min(60, Math.max(50, window.innerWidth * 0.04));
-      const dx = isMobile ? -Math.round(targetL / 2.45) : Math.round(targetL / 2.45);
-      const dy = Math.round(Math.abs(dx) * 2.18);
-      const handoffBottom = heroEndY + dy;
-      const header = document.querySelector<HTMLElement>("[data-site-header]");
-      let headerH = 60;
-      if (header) {
-        const wasCompact = header.hasAttribute("data-compact");
-        const prevTransition = header.style.transition;
-        header.style.transition = "none";
-        header.setAttribute("data-compact", "");
-        headerH = header.offsetHeight;
-        header.style.transition = prevTransition;
-        if (!wasCompact) header.removeAttribute("data-compact");
-      }
-      const sOccluded = Math.ceil(handoffBottom - headerH);
+      const s0 = Math.round(heroH * 0.55);
+      const sHandoffEnd = s0 + (isMobile ? 35 : 50);
       const firstGlyph = document.querySelector<HTMLElement>(".about__glyph");
       const firstY = firstGlyph ? firstGlyph.getBoundingClientRect().top + window.scrollY : heroH + 400;
-      const sGlyphStart = Math.max(sOccluded + (isMobile ? 65 : 85), Math.round(firstY - window.innerHeight * 0.72));
+      const sGlyphStart = Math.max(sHandoffEnd + (isMobile ? 65 : 85), Math.round(firstY - window.innerHeight * 0.72));
 
-      const midHidden = Math.round((sOccluded + sGlyphStart) / 2);
-      window.scrollTo({ top: midHidden, behavior: "instant" });
+      const midConnector = Math.round((sHandoffEnd + sGlyphStart) / 2);
+      window.scrollTo({ top: midConnector, behavior: "instant" });
       window.dispatchEvent(new Event("scroll"));
 
+      const svg = document.querySelector<SVGElement>("svg[data-site-thread]")!;
       const siteEnd = document.querySelector<SVGElement>("[data-site-thread-end]");
       const glyphEnd = document.querySelector<SVGElement>("[data-glyph-thread-end]");
       const handoff = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']");
-      const siteEndHidden = !siteEnd || getComputedStyle(siteEnd).opacity === "0" || getComputedStyle(siteEnd).visibility === "hidden";
+      const connector = document.querySelector<SVGPathElement>("[data-site-thread-segment='6']");
+      const siteEndVisible = !!siteEnd && getComputedStyle(siteEnd).opacity !== "0" && getComputedStyle(siteEnd).visibility !== "hidden";
       const glyphEndHidden = !glyphEnd || getComputedStyle(glyphEnd).opacity === "0" || getComputedStyle(glyphEnd).visibility === "hidden";
-      const handoffHidden = !handoff || getComputedStyle(handoff).visibility === "hidden";
+      const handoffCompleted = !!handoff && getComputedStyle(handoff).visibility !== "hidden" && handoff.style.strokeDasharray === "none";
+      const connectorDash = connector ? connector.style.strokeDasharray : "";
+      const connectorPrefix = connectorDash && connectorDash !== "none" ? Number.parseFloat(connectorDash.split(" ")[0] || "0") : 0;
+      const connectorLength = connector ? connector.getTotalLength() : 0;
 
       return {
-        sOccluded,
+        sHandoffEnd,
         sGlyphStart,
-        midHidden,
-        siteEndHidden,
+        midConnector,
+        phase: svg.getAttribute("data-thread-phase"),
+        siteEndVisible,
         glyphEndHidden,
-        handoffHidden,
+        handoffCompleted,
+        connectorPrefix,
+        connectorLength,
       };
     });
 
-    expect(hiddenInfo.sGlyphStart - hiddenInfo.sOccluded).toBeGreaterThan(0);
-    expect(hiddenInfo.siteEndHidden).toBe(true);
-    expect(hiddenInfo.glyphEndHidden).toBe(true);
-    expect(hiddenInfo.handoffHidden).toBe(true);
+    expect(connectorInfo.sGlyphStart - connectorInfo.sHandoffEnd).toBeGreaterThan(0);
+    expect(connectorInfo.phase).toBe("connector");
+    expect(connectorInfo.handoffCompleted).toBe(true);
+    expect(connectorInfo.connectorPrefix).toBeGreaterThan(0);
+    expect(connectorInfo.connectorPrefix).toBeLessThan(connectorInfo.connectorLength);
+    expect(connectorInfo.siteEndVisible).toBe(true);
+    expect(connectorInfo.glyphEndHidden).toBe(true);
 
     const collisions = await page.evaluate(() => {
       const handoffPath = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']")!;
@@ -840,37 +829,11 @@ test("enforces continuous lifecycle A -> B -> C -> D and reversible symmetry", a
       const hero = document.getElementById("top") || document.querySelector(".hero");
       const heroH = hero ? hero.getBoundingClientRect().height : window.innerHeight;
       const s0 = Math.round(heroH * 0.55);
+      const sHandoffEnd = s0 + (window.innerWidth <= 700 ? 35 : 50);
 
-      const header = document.querySelector<HTMLElement>("[data-site-header]");
-      let headerH = 60;
-      if (header) {
-        const wasCompact = header.hasAttribute("data-compact");
-        const prevTransition = header.style.transition;
-        header.style.transition = "none";
-        header.setAttribute("data-compact", "");
-        headerH = header.offsetHeight;
-        header.style.transition = prevTransition;
-        if (!wasCompact) header.removeAttribute("data-compact");
-      }
-
-      const isMobile = window.innerWidth <= 700;
-      const heroExit = document.querySelector<SVGPathElement>(
-        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
-      )!;
-      const p = heroExit.getPointAtLength(heroExit.getTotalLength());
-      const m = heroExit.getScreenCTM();
-      const heroEndY = m ? p.x * m.b + p.y * m.d + m.f + scrollY : heroH;
-      const targetL = isMobile
-        ? Math.min(42, Math.max(34, window.innerWidth * 0.09))
-        : Math.min(60, Math.max(50, window.innerWidth * 0.04));
-      const dx = isMobile ? -Math.round(targetL / 2.45) : Math.round(targetL / 2.45);
-      const dy = Math.round(Math.abs(dx) * 2.18);
-      const handoffBottom = heroEndY + dy;
-      const sOccluded = Math.ceil(handoffBottom - headerH);
-
-      const firstGlyph = document.querySelector<HTMLElement>(isMobile ? ".about__glyph" : ".about__glyph");
+      const firstGlyph = document.querySelector<HTMLElement>(".about__glyph");
       const firstY = firstGlyph ? firstGlyph.getBoundingClientRect().top + window.scrollY : heroH + 400;
-      const sGlyphStart = Math.max(sOccluded + (isMobile ? 65 : 85), Math.round(firstY - window.innerHeight * 0.72));
+      const sGlyphStart = Math.max(sHandoffEnd + (window.innerWidth <= 700 ? 65 : 85), Math.round(firstY - window.innerHeight * 0.72));
 
       const svg = document.querySelector<SVGElement>("svg[data-site-thread]")!;
       const handoff = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']")!;
@@ -917,7 +880,7 @@ test("enforces continuous lifecycle A -> B -> C -> D and reversible symmetry", a
 
       return {
         s0,
-        sOccluded,
+        sHandoffEnd,
         sGlyphStart,
         forwardSamples,
         reverseSamples,
@@ -931,20 +894,26 @@ test("enforces continuous lifecycle A -> B -> C -> D and reversible symmetry", a
       if (idx === 0 || sample.phase !== forwardSamples[idx - 1]!.phase) {
         distinctPhases.push(sample.phase);
       }
-      if (sample.phase === "handoff") {
-        expect(sample.handoffVis).not.toBe("hidden");
-      }
-      if (sample.phase === "hidden") {
+      if (sample.phase === "hero") {
         expect(sample.handoffVis).toBe("hidden");
         expect(sample.siteEndVis).toBe(false);
         expect(sample.glyphEndVis).toBe(false);
       }
+      if (sample.phase === "handoff") {
+        expect(sample.handoffVis).not.toBe("hidden");
+        expect(sample.siteEndVis).toBe(true);
+      }
+      if (sample.phase === "connector") {
+        expect(sample.handoffVis).not.toBe("hidden");
+        expect(sample.siteEndVis).toBe(true);
+        expect(sample.glyphEndVis).toBe(false);
+      }
       if (sample.phase === "glyph") {
-        expect(sample.handoffVis).toBe("hidden");
+        expect(sample.handoffVis).not.toBe("hidden");
       }
     });
 
-    expect(distinctPhases).toEqual(["hero", "handoff", "hidden", "glyph"]);
+    expect(distinctPhases).toEqual(["hero", "handoff", "connector", "glyph"]);
 
     const reverseByY = new Map(reverseSamples.map((s) => [s.y, s]));
     for (const fSample of forwardSamples) {
@@ -958,7 +927,7 @@ test("enforces continuous lifecycle A -> B -> C -> D and reversible symmetry", a
   }
 });
 
-test("guarantees handoff is fully occluded before hiding", async ({ page }) => {
+test("connector bridges handoff end to first glyph junction without a gap", async ({ page }) => {
   const viewports = [
     { width: 1920, height: 927 },
     { width: 1440, height: 900 },
@@ -972,71 +941,78 @@ test("guarantees handoff is fully occluded before hiding", async ({ page }) => {
     await page.waitForLoadState("domcontentloaded");
     await page.evaluate(() => document.fonts.ready);
 
-    const occlusionData = await page.evaluate(async () => {
+    const bridge = await page.evaluate(async () => {
       const isMobile = window.innerWidth <= 700;
-      const heroExit = document.querySelector<SVGPathElement>(
-        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
-      )!;
-      const p = heroExit.getPointAtLength(heroExit.getTotalLength());
-      const m = heroExit.getScreenCTM();
       const hero = document.getElementById("top") || document.querySelector(".hero");
       const heroH = hero ? hero.getBoundingClientRect().height : window.innerHeight;
-      const heroEndY = m ? p.x * m.b + p.y * m.d + m.f + scrollY : heroH;
-      const targetL = isMobile
-        ? Math.min(42, Math.max(34, window.innerWidth * 0.09))
-        : Math.min(60, Math.max(50, window.innerWidth * 0.04));
-      const dx = isMobile ? -Math.round(targetL / 2.45) : Math.round(targetL / 2.45);
-      const dy = Math.round(Math.abs(dx) * 2.18);
-      const handoffBottom = heroEndY + dy;
+      const s0 = Math.round(heroH * 0.55);
+      const sHandoffEnd = s0 + (isMobile ? 35 : 50);
 
-      const header = document.querySelector<HTMLElement>("[data-site-header]");
-      let headerH = 60;
-      if (header) {
-        const wasCompact = header.hasAttribute("data-compact");
-        const prevTransition = header.style.transition;
-        header.style.transition = "none";
-        header.setAttribute("data-compact", "");
-        headerH = header.offsetHeight;
-        header.style.transition = prevTransition;
-        if (!wasCompact) header.removeAttribute("data-compact");
+      // First glyph in rendered order: group by top, reverse even lines.
+      const glyphEls = [...document.querySelectorAll<HTMLElement>(".about__glyph[data-glyph-key]")];
+      const raw = glyphEls.map((el) => {
+        const box = el.getBoundingClientRect();
+        return { key: el.dataset.glyphKey!, top: box.top + scrollY, left: box.left + scrollX };
+      });
+      const lines: typeof raw[] = [];
+      [...raw].sort((a, b) => a.top - b.top || a.left - b.left).forEach((g) => {
+        const line = lines.find((items) => Math.abs(items[0]!.top - g.top) < 4);
+        line ? line.push(g) : lines.push([g]);
+      });
+      lines.forEach((line, lineIndex) => {
+        line.sort((a, b) => a.left - b.left);
+        if (lineIndex % 2 === 0) line.reverse();
+      });
+      const firstKey = lines.flat()[0]!.key;
+      const firstPath = document.querySelector<SVGPathElement>(`path[data-glyph-key='${firstKey}'][data-glyph-contour='0']`)!;
+      const pathLen = firstPath.getTotalLength();
+      let junction = { x: 0, y: Number.POSITIVE_INFINITY };
+      for (let i = 0; i <= 120; i++) {
+        const pt = firstPath.getPointAtLength((pathLen * i) / 120);
+        const m = firstPath.getScreenCTM()!;
+        const x = pt.x * m.a + pt.y * m.c + m.e;
+        const y = pt.x * m.b + pt.y * m.d + m.f + scrollY;
+        if (y < junction.y) junction = { x, y };
       }
-      const sOccluded = Math.ceil(handoffBottom - headerH);
 
       const handoff = document.querySelector<SVGPathElement>("[data-site-thread-segment='0']")!;
+      const connector = document.querySelector<SVGPathElement>("[data-site-thread-segment='6']")!;
+      const handoffEnd = handoff.getPointAtLength(handoff.getTotalLength());
+      const connectorStart = connector.getPointAtLength(0);
+      const connectorEnd = connector.getPointAtLength(connector.getTotalLength());
+      const connectorLen = connector.getTotalLength();
 
-      window.scrollTo({ top: sOccluded - 1, behavior: "instant" });
-      window.dispatchEvent(new Event("scroll"));
-      await new Promise((resolve) => setTimeout(resolve, 250));
-
-      const beforeVis = getComputedStyle(handoff).visibility;
-      const handoffBoxBefore = handoff.getBoundingClientRect();
-      const headerBoxBefore = header!.getBoundingClientRect();
-
-      window.scrollTo({ top: sOccluded, behavior: "instant" });
+      const firstGlyph = document.querySelector<HTMLElement>(".about__glyph");
+      const firstY = firstGlyph ? firstGlyph.getBoundingClientRect().top + window.scrollY : heroH + 400;
+      const sGlyphStart = Math.max(sHandoffEnd + (isMobile ? 65 : 85), Math.round(firstY - window.innerHeight * 0.72));
+      const midConnector = Math.round((sHandoffEnd + sGlyphStart) / 2);
+      window.scrollTo({ top: midConnector, behavior: "instant" });
       window.dispatchEvent(new Event("scroll"));
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const atVis = getComputedStyle(handoff).visibility;
-      const handoffBoxAt = handoff.getBoundingClientRect();
-      const headerBoxAt = header!.getBoundingClientRect();
+      const siteEnd = document.querySelector<SVGCircleElement>("[data-site-thread-end]")!;
+      const dotX = Number.parseFloat(siteEnd.getAttribute("cx") || "0");
+      const dotY = Number.parseFloat(siteEnd.getAttribute("cy") || "0");
+      let dotDist = Number.POSITIVE_INFINITY;
+      for (let i = 0; i <= 100; i++) {
+        const pt = connector.getPointAtLength((connectorLen * i) / 100);
+        dotDist = Math.min(dotDist, Math.hypot(pt.x - dotX, pt.y - dotY));
+      }
 
       return {
-        sOccluded,
-        headerH,
-        beforeVis,
-        handoffBottomBefore: handoffBoxBefore.bottom,
-        headerBottomBefore: headerBoxBefore.bottom,
-        atVis,
-        handoffBottomAt: handoffBoxAt.bottom,
-        headerBottomAt: headerBoxAt.bottom,
+        handoffToConnector: Math.hypot(handoffEnd.x - connectorStart.x, handoffEnd.y - connectorStart.y),
+        connectorToJunction: Math.hypot(connectorEnd.x - junction.x, connectorEnd.y - junction.y),
+        connectorLen,
+        dotDist,
+        dotVisible: getComputedStyle(siteEnd).opacity !== "0",
       };
     });
 
-    expect(occlusionData.beforeVis).not.toBe("hidden");
-    expect(occlusionData.handoffBottomBefore).toBeLessThanOrEqual(occlusionData.headerBottomBefore + 1.5);
-
-    expect(occlusionData.atVis).toBe("hidden");
-    expect(occlusionData.handoffBottomAt).toBeLessThanOrEqual(occlusionData.headerBottomAt + 0.5);
+    expect(bridge.handoffToConnector).toBeLessThanOrEqual(1.0);
+    expect(bridge.connectorToJunction).toBeLessThanOrEqual(1.0);
+    expect(bridge.connectorLen).toBeGreaterThan(100);
+    expect(bridge.dotVisible).toBe(true);
+    expect(bridge.dotDist).toBeLessThanOrEqual(3);
   }
 });
 
@@ -1495,6 +1471,79 @@ test("verifies contiguous open-path topology across hero, handoff, glyph connect
       expect(connectorTopology.groups.length).toBe(1);
       expect(connectorTopology.firstIndex).toBe(0);
       expect(Number.parseFloat(connectorTopology.offset)).toBe(0);
+    }
+
+    // 4. Hero-to-glyph connector ([data-site-thread-segment='6']) during its draw range
+    const firstGlyphEl = await page.evaluate(() => {
+      const firstGlyph = document.querySelector<HTMLElement>(".about__glyph");
+      return firstGlyph ? firstGlyph.getBoundingClientRect().top + window.scrollY : 0;
+    });
+    const sGlyphStart = Math.max(sHandoffEnd + (isMobileVp ? 65 : 85), Math.round(firstGlyphEl - vp.height * 0.72));
+
+    for (const frac of [0.25, 0.5, 0.75]) {
+      const connectorScroll = Math.round(sHandoffEnd + (sGlyphStart - sHandoffEnd) * frac);
+
+      const sampleConnector = async (y: number) => {
+        await page.evaluate((topY) => {
+          window.scrollTo({ top: topY, behavior: "instant" });
+          window.dispatchEvent(new Event("scroll"));
+        }, y);
+
+        return page.evaluate(() => {
+          const connector = document.querySelector<SVGPathElement>("[data-site-thread-segment='6']");
+          if (!connector) return null;
+          const vis = getComputedStyle(connector).visibility;
+          if (vis === "hidden") return null;
+
+          const total = connector.getTotalLength();
+          const N = 200;
+          const painted: number[] = [];
+          for (let i = 0; i <= N; i++) {
+            const pt = connector.getPointAtLength((total * i) / N);
+            if (connector.isPointInStroke(pt)) painted.push(i);
+          }
+
+          const groups: { start: number; end: number }[] = [];
+          let curStart = -1;
+          for (let i = 0; i <= N; i++) {
+            if (painted.includes(i)) {
+              if (curStart === -1) curStart = i;
+            } else {
+              if (curStart !== -1) {
+                groups.push({ start: curStart, end: i - 1 });
+                curStart = -1;
+              }
+            }
+          }
+          if (curStart !== -1) groups.push({ start: curStart, end: N });
+
+          return {
+            paintedCount: painted.length,
+            groups,
+            firstIndex: painted[0] ?? -1,
+            lastIndex: painted.at(-1) ?? -1,
+            offset: connector.style.strokeDashoffset,
+          };
+        });
+      };
+
+      const forwardConnector = await sampleConnector(connectorScroll);
+      if (forwardConnector && forwardConnector.paintedCount > 0) {
+        expect(forwardConnector.groups.length).toBe(1);
+        expect(forwardConnector.firstIndex).toBe(0);
+        expect(Number.parseFloat(forwardConnector.offset)).toBe(0);
+
+        // Reverse check
+        await page.evaluate((topY) => {
+          window.scrollTo({ top: topY + 20, behavior: "instant" });
+          window.dispatchEvent(new Event("scroll"));
+        }, connectorScroll);
+
+        const reverseConnector = await sampleConnector(connectorScroll);
+        expect(reverseConnector?.groups.length).toBe(1);
+        expect(reverseConnector?.firstIndex).toBe(0);
+        expect(reverseConnector?.paintedCount).toBe(forwardConnector.paintedCount);
+      }
     }
   }
 });
