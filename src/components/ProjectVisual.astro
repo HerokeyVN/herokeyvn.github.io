@@ -4,31 +4,21 @@ import type { Project } from "../data/portfolio";
 interface Props { project: Project; }
 const { project } = Astro.props;
 
-// Motif path builders. They run at build time and return deterministic
-// `d` strings; the scroll drawing itself lives in src/scripts/project-threads.ts.
-// Round 8 redesign: the round-7 motifs read as sparse abstract geometry on
-// big empty stages, so each motif now fills ~85% of its stage and draws a
-// recognizable story element (tangled knot, staff + vinyl, piano keyboard).
+// Round 9 rebuild: the round-8 motifs are deleted outright. Each project
+// visual is now a meaningful story told through the red thread, per
+// docs/storyboards-round-9.md (the design authority). The stage holds real
+// DOM scenes (absolutely positioned, % of the stage so they track the SVG
+// viewBox at any rendered width) plus one SVG overlay carrying the thread.
+// All scene typography/spacing uses container query units (cqw) against the
+// stage, so the DOM scenes scale with the stage exactly like the SVG does.
+// The scroll drawing itself lives in src/scripts/project-threads.ts: one
+// shared proxy `p` per project drives thread, DOM states, key/bar lighting
+// and playhead together.
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
-// Archimedean spiral, radius r0 to r1 over `turns` turns, sampled every 6 degrees.
-const spiralPath = (cx: number, cy: number, r0: number, rEnd: number, turns: number) => {
-  const totalAngle = turns * 2 * Math.PI;
-  const steps = Math.round(totalAngle / (Math.PI / 30));
-  let d = "";
-  for (let i = 0; i <= steps; i++) {
-    const angle = (totalAngle * i) / steps;
-    const r = r0 + ((rEnd - r0) * i) / steps;
-    const x = r1(cx + r * Math.cos(angle));
-    const y = r1(cy + r * Math.sin(angle));
-    d += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
-  }
-  return d;
-};
-
 // Proper-crossing count between non-adjacent segments of a polyline.
-// Build-time diagnostic for the E2EE knot density (target 8-10 crossings).
+// Build-time diagnostic for the small Signal-seal knot (target >= 2).
 type Pt = { x: number; y: number };
 const countCrossings = (pts: Pt[]) => {
   const orient = (a: Pt, b: Pt, c: Pt) =>
@@ -51,12 +41,10 @@ const countCrossings = (pts: Pt[]) => {
   return n;
 };
 
-// Dense tangled knot: one period of a perturbed 3:2 Lissajous figure.
-// t runs pi/2..5pi/2 so the loop starts and ends at the leftmost point
-// (cx-A, cy); the exit straight then runs from there through the ball to B,
-// like a thread passing through a ball of yarn. The perturbation breaks the
-// figure's exact symmetry so the loops read as a tangle, not a spirograph.
-// Returns the path and its self-crossing count (7, plus the through-line).
+// Small dense knot: one period of a perturbed 3:2 Lissajous figure. Used
+// ONLY as the Signal-seal element inside the E2EE story (the knot is no
+// longer the motif). t runs pi/2..5pi/2 so the loop starts and ends at the
+// leftmost point (cx-A, cy).
 const knotPath = (cx: number, cy: number, A: number, B: number, A2: number, B2: number) => {
   const N = 240;
   const pts: Pt[] = [];
@@ -74,9 +62,9 @@ const knotPath = (cx: number, cy: number, A: number, B: number, A2: number, B2: 
   return { d, crossings: countCrossings(pts) };
 };
 
-// Smooth melody through note points (Catmull-Rom to Bezier). Points flagged
-// `loop` get a small note-head loop (near-full circle arc) drawn on the spot.
-type MelodyNote = { x: number; y: number; loop?: boolean };
+// Smooth curve through points (Catmull-Rom to Bezier). Used for the Sheet
+// Store melody line through its timeline notes.
+type MelodyNote = { x: number; y: number };
 const melodyPath = (notes: MelodyNote[]) => {
   const first = notes[0]!;
   let d = `M ${first.x} ${first.y}`;
@@ -90,193 +78,604 @@ const melodyPath = (notes: MelodyNote[]) => {
     const c2x = p2.x - (p3.x - p1.x) / 6;
     const c2y = p2.y - (p3.y - p1.y) / 6;
     d += ` C ${r1(c1x)} ${r1(c1y)}, ${r1(c2x)} ${r1(c2y)}, ${p2.x} ${p2.y}`;
-    if (p2.loop) d += ` a 13 13 0 1 1 0.01 0`;
   }
   return d;
 };
 
-// Piano keyboard, drawn in one continuous serpentine: right edge up, then
-// alternating top/bottom runs so every key separator is drawn once and the
-// path ends at the top-left corner, ready for the steps.
-const keyboardPath = (x0: number, x1: number, yTop: number, yBottom: number, keys: number) => {
-  const w = (x1 - x0) / keys;
-  let d = `M ${x1} ${yBottom} L ${x1} ${yTop}`;
-  let x = x1;
-  let top = true;
-  for (let k = 0; k < keys; k++) {
-    x -= w;
-    d += ` L ${r1(x)} ${top ? yTop : yBottom} L ${r1(x)} ${top ? yBottom : yTop}`;
-    top = !top;
-  }
-  return d;
+// ---------------------------------------------------------------- E2EE
+// Journey of an encrypted message. Desktop 900x560: Device A left, sealed
+// envelope centre (Signal knot inside), Noise sleeve + relay right, Device B
+// bottom-right. Mobile 560x560: the same journey stacked vertically, the
+// sleeve running top-to-bottom.
+const E2EE_KNOT = knotPath(450, 260, 55, 50, 8, 6);
+const E2EE_KNOT_MOBILE = knotPath(280, 235, 80, 42, 6, 5);
+console.log(`[motif] E2EE signal-seal knot crossings desktop=${E2EE_KNOT.crossings} mobile=${E2EE_KNOT_MOBILE.crossings}`);
+const E2EE_D = `M 280 242 L 395 260 ${E2EE_KNOT.d.replace(/^M [\d.]+ [\d.]+/, "")} L 760 260 C 768 300, 765 340, 748 380`;
+const E2EE_D_MOBILE = `M 185 110 C 185 160, 195 200, 200 235 ${E2EE_KNOT_MOBILE.d.replace(/^M [\d.]+ [\d.]+/, "")} L 280 300 L 280 428 C 280 450, 230 466, 185 466`;
+
+// ------------------------------------------------------- Sky Sheet Store
+// Faithful HTML presentation of the live site (verified from the research
+// screenshots of skysheet.store, 2026-11-06). Only data read from those
+// screenshots is shown; the fourth Trending card ("Ai Dua Em Ve") is
+// omitted because its cover failed to load in the research render.
+type SheetCard = {
+  title: string; artist: string; transcribedBy?: string; uploadedBy: string;
+  difficulty: "Hard" | "Insane"; tags: string[];
+  bpm: number; notes: number; downloads: number; duration: string;
+  lang?: string; tile: "teal" | "purple" | "navy"; featured?: boolean;
 };
-
-// 01 E2EE: short straight from A, big dense knot centrepiece, straight
-// to B. The knot is one period of a perturbed 3:2 Lissajous figure; the
-// straight to B runs through the ball from the loop's return point.
-const E2EE_KNOT = knotPath(450, 280, 210, 190, 15, 12);
-const E2EE_KNOT_MOBILE = knotPath(280, 280, 140, 135, 10, 8);
-console.log(`[motif] E2EE knot crossings desktop=${E2EE_KNOT.crossings} mobile=${E2EE_KNOT_MOBILE.crossings}`);
-const E2EE_D = `M 60 280 L 240 280 ${E2EE_KNOT.d.replace(/^M [\d.]+ [\d.]+/, "")} L 840 280`;
-const E2EE_D_MOBILE = `M 30 280 L 140 280 ${E2EE_KNOT_MOBILE.d.replace(/^M [\d.]+ [\d.]+/, "")} L 530 280`;
-
-// 02 Sky Sheet Store: melody on a faint staff, then a big vinyl-record
-// spiral. Staff lines and record outlines are dim background guides,
-// not the thread; the red thread draws the melody, the spiral, the exit.
-const SHEET_STAFF_Y = [190, 235, 280, 325, 370];
-const SHEET_STAFF_D = SHEET_STAFF_Y.map((y) => `M 60 ${y} H 860`).join(" ");
-const SHEET_MELODY = melodyPath([
-  { x: 60, y: 280 },
-  { x: 140, y: 235 },
-  { x: 205, y: 190, loop: true },
-  { x: 280, y: 280 },
-  { x: 355, y: 325, loop: true },
-  { x: 430, y: 235 },
-  { x: 500, y: 190, loop: true },
-  { x: 575, y: 280 },
-  { x: 650, y: 325, loop: true },
-  { x: 725, y: 235 },
-  { x: 820, y: 280 },
-]);
-const SHEET_SPIRAL = spiralPath(1150, 280, 8, 195, 5).replace(/^M [\d.]+ [\d.]+/, "");
-const SHEET_D = `${SHEET_MELODY} C 950 250, 1050 310, 1158 280${SHEET_SPIRAL} L 1400 330`;
-
-// Mobile Sheet Store stacks the composition: staff on top, record below.
-const SHEET_STAFF_Y_MOBILE = [120, 150, 180, 210, 240];
-const SHEET_STAFF_D_MOBILE = SHEET_STAFF_Y_MOBILE.map((y) => `M 40 ${y} H 520`).join(" ");
-const SHEET_MELODY_MOBILE = melodyPath([
-  { x: 40, y: 180 },
-  { x: 110, y: 150 },
-  { x: 170, y: 120, loop: true },
-  { x: 240, y: 180 },
-  { x: 310, y: 210, loop: true },
-  { x: 380, y: 150 },
-  { x: 450, y: 180, loop: true },
-  { x: 520, y: 180 },
-]);
-const SHEET_SPIRAL_MOBILE = spiralPath(280, 410, 8, 105, 4).replace(/^M [\d.]+ [\d.]+/, "");
-const SHEET_D_MOBILE = `${SHEET_MELODY_MOBILE} C 520 260, 420 340, 288 410${SHEET_SPIRAL_MOBILE} L 520 470`;
-
-// 03 Sky Auto Piano: keyboard, then tall bouncing steps that dip down to
-// press three keys, then a large arpeggio zigzag to the top-right corner.
-const PIANO_KEYS = keyboardPath(60, 840, 430, 520, 12);
-const PIANO_STEPS =
-  "L 60 300 L 160 300 L 160 430 L 160 210 L 260 210 L 260 430 L 260 120 L 360 120 L 360 430 L 360 60";
-const PIANO_ARP = "L 430 150 L 500 60 L 570 150 L 640 60 L 710 150 L 780 60 L 850 150 L 880 70";
-const PIANO_D = `${PIANO_KEYS} ${PIANO_STEPS} ${PIANO_ARP}`;
-const PIANO_DOTS = [
-  { cx: 160, cy: 430 },
-  { cx: 260, cy: 430 },
-  { cx: 360, cy: 430 },
+const SHEET_CARDS: SheetCard[] = [
+  {
+    title: "Tìm Em", artist: "Hngle Ft. Bảo Anh", transcribedBy: "DTomi",
+    uploadedBy: "người lạ thoáng qua", difficulty: "Hard", tags: ["emotional"],
+    bpm: 292, notes: 684, downloads: 41, duration: "3:51", lang: "VN",
+    tile: "teal", featured: true,
+  },
+  {
+    title: "truoc khi em ton tai", artist: "Anonymous", transcribedBy: "DEX",
+    uploadedBy: "Toàn Nguyễn Phạm Dinh", difficulty: "Hard", tags: [],
+    bpm: 520, notes: 345, downloads: 47, duration: "1:26", tile: "purple",
+  },
+  {
+    title: "luu nien", artist: "Hakari",
+    uploadedBy: "hakari", difficulty: "Insane", tags: [],
+    bpm: 750, notes: 953, downloads: 42, duration: "3:08", tile: "navy",
+  },
 ];
-
-const PIANO_KEYS_MOBILE = keyboardPath(30, 530, 430, 520, 10);
-const PIANO_STEPS_MOBILE =
-  "L 30 300 L 110 300 L 110 430 L 110 210 L 190 210 L 190 430 L 190 120 L 270 120 L 270 430 L 270 60";
-const PIANO_ARP_MOBILE = "L 330 150 L 390 60 L 450 150 L 510 60 L 540 110";
-const PIANO_D_MOBILE = `${PIANO_KEYS_MOBILE} ${PIANO_STEPS_MOBILE} ${PIANO_ARP_MOBILE}`;
-const PIANO_DOTS_MOBILE = [
-  { cx: 110, cy: 430 },
-  { cx: 190, cy: 430 },
-  { cx: 270, cy: 430 },
+const SHEET_STATS = [
+  { value: "292", label: "BPM" },
+  { value: "3:51", label: "Duration" },
+  { value: "684", label: "Note Count" },
+  { value: "2.96", label: "Notes/Sec" },
+  { value: "15/15", label: "Unique Keys" },
+  { value: "89", label: "Chord Count" },
 ];
+// Original 8-note practice phrase (times in seconds, keys 0-14). Ends on
+// key 14, the bottom-right key of the grid, where the thread exits.
+const SHEET_PHRASE = [
+  { time: 0, key: 0 }, { time: 1, key: 2 }, { time: 2, key: 4 },
+  { time: 3, key: 7 }, { time: 4, key: 9 }, { time: 5, key: 11 },
+  { time: 6, key: 12 }, { time: 7, key: 14 },
+];
+const SHEET_NOTES: MelodyNote[] = SHEET_PHRASE.map((note) => ({
+  x: r1(120 + (note.time / 7) * 1200),
+  y: r1(170 - (note.key / 14) * 60),
+}));
+const SHEET_NOTES_MOBILE: MelodyNote[] = SHEET_PHRASE.map((note) => ({
+  x: r1(30 + (note.time / 7) * 500),
+  y: r1(150 - (note.key / 14) * 40),
+}));
+const SHEET_MELODY = melodyPath(SHEET_NOTES).replace(/^M [\d.]+ [\d.]+/, "");
+const SHEET_MELODY_MOBILE = melodyPath(SHEET_NOTES_MOBILE).replace(/^M [\d.]+ [\d.]+/, "");
+const SHEET_D_BROWSE = `M 10 175 L 258 175`;
+const SHEET_D_DETAIL = `M 258 175 C 280 260, 340 330, 400 355 C 490 300, 620 200, 730 185 C 800 175, 860 182, 900 212`;
+// Fix round: the old route looped around the stats strip, and the loop's
+// corner grazed the stat values (a practice dot sat on "2.96"). The thread
+// now runs UNDER the stats strip, in the clear gap between the strip and
+// the rail, and dips into Open Player. No loop, no text crossed.
+const SHEET_D_PRACTICE = `M 120 170${SHEET_MELODY} C 1320 250, 1200 380, 1070 470`;
+const SHEET_D_MOBILE_BROWSE = `M 8 105 L 71 105`;
+const SHEET_D_MOBILE_DETAIL = `M 71 105 C 90 130, 200 120, 280 116 C 370 150, 460 200, 500 260 C 520 295, 480 325, 426 347`;
+// Fix round: the old mobile route looped a rectangle around the stats
+// block, so at mid scrub its visible end sat beside Share Sheet instead of
+// pointing at Open Player. The thread now sweeps from the play button
+// straight to the centre of Open Player.
+const SHEET_D_MOBILE_PRACTICE = `M 30 150${SHEET_MELODY_MOBILE} C 548 220, 548 380, 540 481`;
+
+// --------------------------------------------------------- Sky Auto Piano
+// Original 8-note sequence using ONLY the two note-to-key mappings verified
+// in the storyboard (1Key3 -> H, 1Key7 -> L). One chord (H+L at 4.5s), one
+// sustained note (L, 6.0-8.5s). Total 12s. The bars carry their timing as
+// data attributes so the script reads the same numbers the markup shows.
+type PianoNote = { start: number; end: number; pkey: "H" | "L"; lane: 0 | 1 };
+const PIANO_NOTES: PianoNote[] = [
+  { start: 0.0, end: 0.5, pkey: "H", lane: 0 },
+  { start: 1.5, end: 2.0, pkey: "L", lane: 1 },
+  { start: 3.0, end: 3.5, pkey: "H", lane: 0 },
+  { start: 4.5, end: 5.0, pkey: "H", lane: 0 },
+  { start: 4.5, end: 5.0, pkey: "L", lane: 1 },
+  { start: 6.0, end: 8.5, pkey: "L", lane: 1 },
+  { start: 9.0, end: 9.5, pkey: "H", lane: 0 },
+  { start: 10.5, end: 11.0, pkey: "L", lane: 1 },
+];
+const PIANO_KEYS = ["Y", "U", "I", "O", "P", "H", "J", "K", "L", ";", "N", "M", ",", ".", "/"];
+const PIANO_D = "M 300 72 C 265 118, 200 145, 130 158 C 80 166, 30 172, 22 195 C 16 220, 20 250, 35 262 L 60 265";
+// Fix round: the old entry bent right too early and grazed the timeline
+// label (2.9px from its top-left corner on desktop, 1.3px on mobile). The
+// descent now stays tight to the left edge until it is level with the H
+// lane, then runs right to the first bar, below the label.
+const PIANO_D_MOBILE = "M 60 110 C 48 132, 28 142, 12 158 C 7 172, 6 195, 6 215 C 6 232, 15 240, 30 244";
+const PIANO_EXIT_D = "M 840 280 C 800 350, 720 420, 660 448 C 620 458, 560 460, 538 482";
+// Fix round: the old exit dropped straight down the right edge, then swept
+// back left across the footer strip. It now runs diagonally to the L key,
+// passing below the footer and the "0:12" tick, and approaches L along the
+// keyboard row gap.
+const PIANO_EXIT_D_MOBILE = "M 530 245 C 515 275, 500 295, 488 318 C 480 340, 475 365, 470 392 C 460 420, 445 445, 430 458 C 415 462, 395 470, 384 482";
+// Fix round (mobile): same tidy-up - the exit crosses the tick row in the
+// gap between "0:09" and "0:12", stays right of the footer, and approaches
+// the L key along the row gap instead of sweeping across the footer strip.
 ---
 
 {project.slug === "fb-messenger-e2ee" && (
-  <div class="project-thread-stage" data-project-thread-stage>
+  <div class="project-thread-stage" data-project-thread-stage data-project-slug="fb-messenger-e2ee" aria-hidden="true">
+    <span class="visual-label visual-label--top">Illustrative interface - the toolkit has no chat UI.</span>
+
+    <div class="scene scene--e2ee-a" data-scene="e2ee-a">
+      <span class="scene-label" data-el="e2ee-label-a">Device A</span>
+      <div class="bubble" data-el="e2ee-bubble-a"><span>Hello</span></div>
+      <span class="mono-caption" data-el="e2ee-mono-a">sendMessage(&#123; threadId, text: "Hello" &#125;)</span>
+    </div>
+
+    <div class="scene scene--e2ee-seal" data-scene="e2ee-seal">
+      <span class="mono-caption mono-caption--center" data-el="e2ee-signal-label">Signal Protocol - end-to-end encryption · sealed per device</span>
+      <span class="mono-caption" data-el="e2ee-noise-label">Noise - transport only ·<br />AES-256-GCM</span>
+      <span class="mono-caption mono-caption--center" data-el="e2ee-relay-label">Relay - sees only the sealed message</span>
+    </div>
+
+    <div class="scene scene--e2ee-b" data-scene="e2ee-b">
+      <span class="scene-label" data-el="e2ee-label-b">Device B</span>
+      <div class="bubble" data-el="e2ee-bubble-b"><span>Hello</span></div>
+      <span class="mono-caption" data-el="e2ee-mono-b">e2ee_message → text: "Hello"</span>
+    </div>
+
+    <span class="final-caption" data-el="e2ee-final-caption">End-to-end encrypted: only the intended devices can read it.</span>
+
     <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="fb-messenger-e2ee" data-variant="desktop" viewBox="0 0 900 560" aria-hidden="true">
+      <rect class="project-thread-guide" x="36" y="150" width="90" height="270" rx="12"></rect>
+      <rect class="project-thread-guide" x="360" y="170" width="180" height="180" rx="6"></rect>
+      <path class="project-thread-guide" d="M 360 170 L 450 250 L 540 170"></path>
+      <rect class="project-thread-guide" x="540" y="242" width="220" height="40" rx="20"></rect>
+      <rect class="project-thread-guide project-thread-guide--rack" x="620" y="200" width="60" height="120" rx="4"></rect>
+      <path class="project-thread-guide" d="M 620 224 H 680 M 620 248 H 680 M 620 272 H 680 M 620 296 H 680"></path>
+      <rect class="project-thread-guide" x="800" y="150" width="90" height="270" rx="12"></rect>
       <path class="project-thread-path" d={E2EE_D}></path>
-      <circle class="project-thread-node" data-thread-node="a" cx="60" cy="280" r="7"></circle>
-      <circle class="project-thread-node" data-thread-node="b" cx="840" cy="280" r="7"></circle>
-      <text class="project-thread-label" x="60" y="256" text-anchor="middle">A</text>
-      <text class="project-thread-label" x="840" y="256" text-anchor="middle">B</text>
     </svg>
     <svg class="project-thread-svg project-thread-svg--mobile" data-project-thread="fb-messenger-e2ee" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
+      <rect class="project-thread-guide" x="28" y="34" width="68" height="106" rx="10"></rect>
+      <rect class="project-thread-guide" x="150" y="170" width="260" height="130" rx="6"></rect>
+      <path class="project-thread-guide" d="M 150 170 L 280 235 L 410 170"></path>
+      <rect class="project-thread-guide" x="260" y="348" width="40" height="80" rx="20"></rect>
+      <rect class="project-thread-guide project-thread-guide--rack" x="220" y="360" width="120" height="60" rx="4"></rect>
+      <path class="project-thread-guide" d="M 220 375 H 340 M 220 390 H 340 M 220 405 H 340"></path>
+      <rect class="project-thread-guide" x="28" y="440" width="68" height="90" rx="10"></rect>
       <path class="project-thread-path" d={E2EE_D_MOBILE}></path>
-      <circle class="project-thread-node" data-thread-node="a" cx="30" cy="280" r="7"></circle>
-      <circle class="project-thread-node" data-thread-node="b" cx="530" cy="280" r="7"></circle>
-      <text class="project-thread-label" x="30" y="256" text-anchor="middle">A</text>
-      <text class="project-thread-label" x="530" y="256" text-anchor="middle">B</text>
     </svg>
-    <span class="visual-label visual-label--top">Signal Protocol / Key state</span>
-    <span class="visual-label visual-label--top-right">Noise transport / Encrypted flow</span>
-    <span class="phase-caption phase-caption--left">Plaintext</span>
-    <span class="phase-caption phase-caption--center">Encrypted</span>
-    <span class="phase-caption phase-caption--right">Decrypted</span>
   </div>
 )}
 
 {project.slug === "sky-sheet-store" && (
-  <div class="project-thread-stage project-thread-stage--panoramic" data-project-thread-stage>
+  <div class="project-thread-stage project-thread-stage--panoramic" data-project-thread-stage data-project-slug="sky-sheet-store" aria-hidden="true">
+    <span class="visual-label visual-label--top-right">Faithful presentation - not a screenshot</span>
+
+    <div class="scene scene--sheet-browse" data-scene="sheet-browse">
+      <span class="sheet-section-label" data-el="sheet-browse-label">Trending Sheets</span>
+      <span class="sheet-view-all" data-el="sheet-view-all">View all &gt;</span>
+      <div class="sheet-cards" data-el="sheet-cards">
+        {SHEET_CARDS.map((card) => (
+          <article class:list={["sheet-card", card.featured ? "sheet-card--featured" : ""]}>
+            {card.featured && <span class="sheet-card__outline" data-el="sheet-featured-outline"></span>}
+            <div class:list={["sheet-card__cover", `sheet-card__cover--${card.tile}`]}>
+              <span class="sheet-card__notes" aria-hidden="true">♪</span>
+              <span class="sheet-card__notes sheet-card__notes--small" aria-hidden="true">♪</span>
+              {card.lang && <span class="sheet-card__badge">{card.lang}</span>}
+              <span class="sheet-card__duration">{card.duration}</span>
+            </div>
+            <div class="sheet-card__body">
+              <h4 class="sheet-card__title">{card.title}</h4>
+              <p class="sheet-card__line">Artist: {card.artist}</p>
+              {card.transcribedBy && <p class="sheet-card__line">Transcribed by: {card.transcribedBy}</p>}
+              <p class="sheet-card__line sheet-card__line--muted">Uploaded by {card.uploadedBy}</p>
+              <p class="sheet-card__reviews">No reviews</p>
+              <p class="sheet-card__pills">
+                <span class:list={["sheet-pill", card.difficulty === "Insane" ? "sheet-pill--insane" : "sheet-pill--hard"]}>{card.difficulty}</span>
+                {card.tags.map((tag) => (<span class="sheet-pill sheet-pill--tag">#{tag}</span>))}
+              </p>
+              <p class="sheet-card__stats">
+                <span>{card.bpm} BPM · {card.notes} notes · {card.downloads} downloads</span>
+                <span class="sheet-card__free">Free</span>
+              </p>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+
+    <div class="scene scene--sheet-detail" data-scene="sheet-detail">
+      <span class="sheet-detail__back" data-el="sheet-detail-back">←</span>
+      <h4 class="sheet-detail__title" data-el="sheet-detail-title">Tìm Em</h4>
+      <p class="sheet-detail__artist" data-el="sheet-detail-artist">Artist: Hngle Ft. Bảo Anh • Transcribed by DTomi</p>
+      <p class="sheet-detail__pills" data-el="sheet-detail-pills">
+        <span class="sheet-pill sheet-pill--hard">Hard</span>
+        <span class="sheet-pill sheet-pill--lang">VN</span>
+        <span class="sheet-pill sheet-pill--tag">#emotional</span>
+      </p>
+      <p class="sheet-detail__reviews" data-el="sheet-detail-reviews">No reviews</p>
+      <div class="sheet-detail__stats" data-el="sheet-detail-stats">
+        {SHEET_STATS.map((stat) => (
+          <div class="sheet-stat"><span class="sheet-stat__value">{stat.value}</span><span class="sheet-stat__label">{stat.label}</span></div>
+        ))}
+      </div>
+      <div class="sheet-detail__cover" data-el="sheet-detail-cover">
+        <span class="sheet-card__notes" aria-hidden="true">♪</span>
+        <span class="sheet-card__notes sheet-card__notes--small" aria-hidden="true">♪</span>
+        <span class="sheet-detail__play">▶</span>
+      </div>
+      <div class="sheet-detail__rail" data-el="sheet-detail-rail">
+        <span class="sheet-rail__primary">▶&nbsp; Open Player</span>
+        <span class="sheet-rail__uploaded"><span class="sheet-rail__avatar"></span><span><span class="sheet-rail__label">Uploaded by</span><span class="sheet-rail__name">người lạ thoáng qua</span></span></span>
+        <span class="sheet-rail__button">Download</span>
+        <span class="sheet-rail__button">↗&nbsp; Share Sheet</span>
+        <span class="sheet-rail__favorite"><span>Favorite</span><span aria-hidden="true">♡</span></span>
+        <span class="sheet-rail__report">Report</span>
+      </div>
+    </div>
+
+    <div class="scene scene--sheet-practice" data-scene="sheet-practice">
+      <span class="sheet-practice__header" data-el="sheet-practice-header">Practice Mode</span>
+      <span class="sheet-practice__speed" data-el="sheet-practice-speed">Speed 1.0× · 0.25×–2.0×</span>
+      <span class="mono-caption" data-el="sheet-practice-note">Playback waits for the correct key before advancing.</span>
+      <div class="sheet-practice__timeline" data-el="sheet-practice-timeline">
+        <span class="sheet-practice__axis"></span>
+        <span class="sheet-practice__tick" style="left: 0%">0s</span>
+        <span class="sheet-practice__tick" style="left: 28.6%">2s</span>
+        <span class="sheet-practice__tick" style="left: 57.1%">4s</span>
+        <span class="sheet-practice__tick" style="left: 85.7%">6s</span>
+      </div>
+      <div class="sheet-practice__grid" data-el="sheet-practice-grid">
+        {Array.from({ length: 15 }, (_, key) => (
+          <span class="sheet-key" data-key={key}>{key}</span>
+        ))}
+      </div>
+    </div>
+
     <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="sky-sheet-store" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
-      <path class="project-thread-guide" d={SHEET_STAFF_D}></path>
-      <circle class="project-thread-guide" cx="1150" cy="280" r="225"></circle>
-      <circle class="project-thread-guide" cx="1150" cy="280" r="140"></circle>
-      <circle class="project-thread-guide-dot" cx="1150" cy="280" r="5"></circle>
-      <path class="project-thread-path" d={SHEET_D}></path>
+      <path class="project-thread-path" data-thread="browse" d={SHEET_D_BROWSE}></path>
+      <path class="project-thread-path" data-thread="detail" d={SHEET_D_DETAIL}></path>
+      <path class="project-thread-path" data-thread="practice" d={SHEET_D_PRACTICE}></path>
+      {SHEET_NOTES.map((note, i) => (
+        <circle class="project-thread-dot" data-note={i} cx={note.x} cy={note.y} r="5"></circle>
+      ))}
     </svg>
     <svg class="project-thread-svg project-thread-svg--mobile" data-project-thread="sky-sheet-store" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
-      <path class="project-thread-guide" d={SHEET_STAFF_D_MOBILE}></path>
-      <circle class="project-thread-guide" cx="280" cy="410" r="115"></circle>
-      <circle class="project-thread-guide" cx="280" cy="410" r="70"></circle>
-      <circle class="project-thread-guide-dot" cx="280" cy="410" r="4"></circle>
-      <path class="project-thread-path" d={SHEET_D_MOBILE}></path>
+      <path class="project-thread-path" data-thread="browse" d={SHEET_D_MOBILE_BROWSE}></path>
+      <path class="project-thread-path" data-thread="detail" d={SHEET_D_MOBILE_DETAIL}></path>
+      <path class="project-thread-path" data-thread="practice" d={SHEET_D_MOBILE_PRACTICE}></path>
+      {SHEET_NOTES_MOBILE.map((note, i) => (
+        <circle class="project-thread-dot" data-note={i} cx={note.x} cy={note.y} r="4"></circle>
+      ))}
     </svg>
-    <span class="visual-label visual-label--top">02 / Live platform</span>
-    <span class="visual-label visual-label--top-right">Discovery · Sharing · Practice</span>
   </div>
 )}
 
 {project.slug === "sky-auto-piano" && (
-  <div class="project-thread-stage" data-project-thread-stage>
-    <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="sky-auto-piano" data-variant="desktop" viewBox="0 0 900 560" aria-hidden="true">
-      <path class="project-thread-path" d={PIANO_D}></path>
-      {PIANO_DOTS.map((dot) => (
-        <circle class="project-thread-node" data-thread-dot cx={dot.cx} cy={dot.cy} r="6"></circle>
+  <div class="project-thread-stage" data-project-thread-stage data-project-slug="sky-auto-piano" data-total="12" aria-hidden="true">
+    <div class="scene scene--piano-library" data-scene="piano-library">
+      <div class="piano-card" data-el="piano-card">
+        <span class="piano-card__title">song.json</span>
+        <span class="piano-card__sub">Imported sheet · 8 notes</span>
+        <span class="piano-card__badge">.json / .txt / .skysheet / .mid / .midi</span>
+      </div>
+      <span class="mono-caption" data-el="piano-snippet">songNotes: [&#123; time, key: "1KeyN", hold? &#125;]</span>
+      <span class="mono-caption" data-el="piano-caption">Import → parse → keyMap: timestamp → keys</span>
+    </div>
+
+    <div class="scene scene--piano-timeline" data-scene="piano-timeline">
+      <span class="mono-caption" data-el="piano-timeline-label">Illustrative timeline - the app shows a progress slider and an editor dot grid, not a piano roll.</span>
+      <span class="mono-caption mono-caption--right" data-el="piano-mapping">1Key3 → H · 1Key7 → L</span>
+      {PIANO_NOTES.map((note, i) => (
+        <span
+          class="piano-bar"
+          data-bar={i}
+          data-start={note.start}
+          data-end={note.end}
+          data-pkey={note.pkey}
+          data-el={`piano-bar-${i + 1}`}
+        ></span>
       ))}
+      <div class="piano-ticks" data-el="piano-ticks">
+        <span style="left: 0%">0:00</span>
+        <span style="left: 25%">0:03</span>
+        <span style="left: 50%">0:06</span>
+        <span style="left: 75%">0:09</span>
+        <span style="left: 100%">0:12</span>
+      </div>
+    </div>
+
+    <div class="scene scene--piano-keyboard" data-scene="piano-keyboard">
+      <div class="piano-footer" data-el="piano-footer">
+        <span class="piano-footer__song">song.json</span>
+        <span class="piano-footer__slider"><span class="piano-footer__fill" data-el="piano-slider-fill"></span></span>
+        <span class="piano-footer__time"><span data-el="piano-live-time">0:00</span> / 0:12</span>
+        <span class="piano-footer__speed">1.0×</span>
+        <span class="piano-footer__toggle">Long-press <i class="piano-footer__dot"></i></span>
+      </div>
+      <span class="mono-caption" data-el="piano-lp-caption">Long-press mode on - sustained notes hold</span>
+      <div class="piano-keyboard" data-el="piano-keyboard-grid">
+        {PIANO_KEYS.map((key) => (
+          <span class="piano-key" data-pkey={key}>{key}</span>
+        ))}
+      </div>
+    </div>
+
+    <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="sky-auto-piano" data-variant="desktop" viewBox="0 0 900 560" aria-hidden="true">
+      <path class="project-thread-guide" d="M 60 330 H 840"></path>
+      <path class="project-thread-path" data-thread="entry" d={PIANO_D}></path>
+      <path class="project-thread-path" data-thread="exit" d={PIANO_EXIT_D}></path>
+      <line class="project-thread-path project-thread-playhead" data-thread="playhead" x1="60" y1="235" x2="60" y2="335"></line>
     </svg>
     <svg class="project-thread-svg project-thread-svg--mobile" data-project-thread="sky-auto-piano" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
-      <path class="project-thread-path" d={PIANO_D_MOBILE}></path>
-      {PIANO_DOTS_MOBILE.map((dot) => (
-        <circle class="project-thread-node" data-thread-dot cx={dot.cx} cy={dot.cy} r="6"></circle>
-      ))}
+      <path class="project-thread-guide" d="M 30 300 H 530"></path>
+      <path class="project-thread-path" data-thread="entry" d={PIANO_D_MOBILE}></path>
+      <path class="project-thread-path" data-thread="exit" d={PIANO_EXIT_D_MOBILE}></path>
+      <line class="project-thread-path project-thread-playhead" data-thread="playhead" x1="30" y1="220" x2="30" y2="310"></line>
     </svg>
-    <span class="visual-label visual-label--top">Desktop playback automation</span>
   </div>
 )}
 
 <style>
   /* The stage keeps the motif viewBox aspect, so the thread fills the stage
-     instead of floating in a tall letterboxed band. Panoramic keeps its own. */
-  .project-thread-stage { position: relative; aspect-ratio: 900 / 560; overflow: hidden; border: 1px solid var(--border-subtle); background: #060608; }
+     exactly. Panoramic keeps its own. The stage is a query container: scene
+     type and spacing use cqw so the DOM scenes scale with the stage exactly
+     like the SVG viewBox does. */
+  .project-thread-stage { position: relative; aspect-ratio: 900 / 560; overflow: hidden; border: 1px solid var(--border-subtle); background: #060608; container-type: inline-size; }
   .project-thread-stage--panoramic { aspect-ratio: 1440 / 560; }
-  .project-thread-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .project-thread-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
   .project-thread-svg--mobile { display: none; }
-  .project-thread-path { fill: none; stroke: var(--accent-red); stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .project-thread-node { fill: var(--accent-red); }
-  /* Dim background guides (staff lines, record outlines): not the thread. */
-  .project-thread-guide { fill: none; stroke: #ffffff; stroke-opacity: 0.16; stroke-width: 1px; vector-effect: non-scaling-stroke; }
-  .project-thread-guide-dot { fill: #ffffff; fill-opacity: 0.22; }
-  .project-thread-label { fill: var(--text-muted); font-family: var(--font-mono); font-size: 15px; font-weight: 500; letter-spacing: 0.08em; }
+  .project-thread-path { fill: none; stroke: var(--accent-red); stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; visibility: hidden; }
+  .project-thread-guide { fill: none; stroke: #ffffff; stroke-opacity: 0.3; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+  /* The relay rack is filled with the stage background so the Noise sleeve
+     passes BEHIND it: with a fill the rack reads as a slotted server unit
+     instead of a plus/cross where the sleeve cuts through it. The thread
+     itself is painted after the guides, so it stays visible over the fill. */
+  .project-thread-guide--rack { fill: #060608; }
+  .project-thread-dot { fill: #060608; stroke: #ffffff; stroke-opacity: 0.4; stroke-width: 1.5px; }
+  .project-thread-dot.is-lit { fill: var(--accent-red); stroke: var(--accent-red); }
+  .project-thread-playhead { stroke-width: 2px; }
   .visual-label { position: absolute; z-index: 2; color: var(--text-muted); font: 400 0.62rem/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
-  .visual-label--top { top: 1.5rem; left: 1.5rem; }
-  .visual-label--top-right { top: 1.5rem; right: 1.5rem; }
-  .visual-label--bottom { right: 1.5rem; bottom: 1.5rem; }
-  /* E2EE phase legend under the motif. */
-  .phase-caption { position: absolute; bottom: 0.75rem; z-index: 2; color: var(--text-muted); font: 400 0.62rem/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
-  .phase-caption--left { left: 1.5rem; }
-  .phase-caption--center { left: 50%; transform: translateX(-50%); color: var(--accent-red); }
-  .phase-caption--right { right: 1.5rem; }
+  .visual-label--top { top: 1.5rem; left: 1.5rem; max-width: 80%; }
+  /* Sheet Store honesty label sits at the bottom centre, not the top
+     right: the top right is where the real site puts "View all". */
+  [data-project-slug="sky-sheet-store"] .visual-label--top-right { top: auto; bottom: 0.6rem; left: 50%; right: auto; transform: translateX(-50%); white-space: nowrap; }
+  .final-caption { position: absolute; bottom: 0.6rem; left: 50%; transform: translateX(-50%); width: 90%; text-align: center; color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px; font-size: 1.22cqw; letter-spacing: 0.04em; opacity: 0; }
+
+  /* Scenes are inset 0, so children positioned in % track the viewBox. */
+  .scene { position: absolute; inset: 0; z-index: 1; }
+  .scene-label { position: absolute; color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px; font-size: 1.22cqw; letter-spacing: 0.08em; text-align: center; }
+  .mono-caption { position: absolute; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; font-size: 1.22cqw; line-height: 1.5; letter-spacing: 0.02em; }
+  .mono-caption--center { text-align: center; }
+  .mono-caption--right { text-align: right; }
+  .bubble { position: absolute; display: flex; align-items: center; justify-content: center; background: #141416; border: 1px solid var(--border-strong); border-radius: 14px; border-radius: 1.56cqw; color: var(--text-primary); font-size: 15px; font-size: 1.67cqw; }
+
+  /* ---- E2EE positions (desktop % of 900x560) ---- */
+  [data-el="e2ee-label-a"] { left: 4%; top: 22.3%; width: 10%; }
+  [data-el="e2ee-bubble-a"] { left: 15.6%; top: 38.4%; width: 15.6%; height: 9.8%; }
+  [data-el="e2ee-mono-a"] { left: 15.6%; top: 51.4%; width: 31%; }
+  [data-el="e2ee-signal-label"] { left: 37.8%; top: 65.2%; width: 24.4%; opacity: 0.4; }
+  [data-el="e2ee-noise-label"] { left: 60.6%; top: 30%; width: 25%; opacity: 0.4; }
+  [data-el="e2ee-relay-label"] { left: 61.1%; top: 58.9%; width: 22.2%; opacity: 0.25; }
+  [data-el="e2ee-label-b"] { left: 88.9%; top: 22.3%; width: 10%; opacity: 0.15; }
+  [data-el="e2ee-bubble-b"] { left: 71.7%; top: 67.9%; width: 15.6%; height: 9.8%; opacity: 0; }
+  [data-el="e2ee-mono-b"] { left: 71.1%; top: 80%; width: 26.7%; opacity: 0; }
+
+  /* ---- Sheet Store ---- */
+  .scene--sheet-detail, .scene--sheet-practice { opacity: 0; }
+  .sheet-section-label { position: absolute; color: var(--text-primary); font-family: var(--font-display); font-size: 18px; font-size: 1.25cqw; font-weight: 700; }
+  .sheet-view-all { position: absolute; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; font-size: 0.76cqw; }
+  .sheet-cards { position: absolute; display: flex; gap: 25px; gap: 1.74cqw; }
+  .sheet-card { position: relative; flex: 1; display: flex; flex-direction: column; background: #ffffff; border-radius: 12px; border-radius: 0.83cqw; overflow: hidden; color: #111827; text-align: left; min-width: 0; }
+  .sheet-card__outline { position: absolute; inset: -5px; border: 2px solid var(--accent-red); border-radius: 14px; border-radius: 0.97cqw; opacity: 0; pointer-events: none; z-index: 2; }
+  .sheet-card__cover { position: relative; flex: 0 0 52%; overflow: hidden; }
+  .sheet-card__cover--teal { background: linear-gradient(135deg, #14b8a6, #0d9488); }
+  .sheet-card__cover--purple { background: linear-gradient(135deg, #a855f7, #7c3aed); }
+  .sheet-card__cover--navy { background: linear-gradient(135deg, #1e293b, #0f172a); }
+  .sheet-card__cover::after { content: ""; position: absolute; inset: 0; background-image: repeating-linear-gradient(0deg, transparent 0 16px, rgba(255, 255, 255, 0.13) 16px 17px), repeating-linear-gradient(90deg, transparent 0 16px, rgba(255, 255, 255, 0.06) 16px 17px); }
+  .sheet-card__notes { position: absolute; left: 38%; top: 34%; color: #ffffff; opacity: 0.55; font-size: 34px; font-size: 2.36cqw; z-index: 1; }
+  .sheet-card__notes--small { left: 12%; top: 62%; font-size: 18px; font-size: 1.25cqw; opacity: 0.35; }
+  .sheet-card__badge { position: absolute; left: 10px; top: 10px; z-index: 1; background: rgba(17, 24, 39, 0.75); color: #fff; font-family: var(--font-mono); font-size: 10px; font-size: 0.69cqw; font-weight: 500; padding: 2px 7px; border-radius: 999px; }
+  .sheet-card__duration { position: absolute; right: 10px; bottom: 10px; z-index: 1; background: rgba(17, 24, 39, 0.75); color: #fff; font-family: var(--font-mono); font-size: 10px; font-size: 0.69cqw; padding: 2px 7px; border-radius: 999px; }
+  .sheet-card__body { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px 12px; padding: 0.83cqw 0.97cqw; }
+  .sheet-card__title { font-family: var(--font-sans); font-size: 16px; font-size: 1.11cqw; font-weight: 600; line-height: 1.25; }
+  .sheet-card__line { font-size: 11px; font-size: 0.76cqw; line-height: 1.45; color: #4b5563; text-transform: uppercase; letter-spacing: 0.02em; }
+  .sheet-card__line--muted { color: #6b7280; text-transform: none; }
+  .sheet-card__reviews { font-size: 11px; font-size: 0.76cqw; font-style: italic; color: #9ca3af; }
+  .sheet-card__pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+  .sheet-pill { display: inline-block; font-family: var(--font-mono); font-size: 10px; font-size: 0.69cqw; padding: 2px 8px; border-radius: 999px; }
+  .sheet-pill--hard { background: #fee2e2; color: #b91c1c; }
+  .sheet-pill--insane { background: #ede9fe; color: #6d28d9; }
+  .sheet-pill--lang { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+  .sheet-pill--tag { background: #eff6ff; color: #2563eb; }
+  .sheet-card__stats { display: flex; justify-content: space-between; margin-top: auto; padding-top: 6px; border-top: 1px solid #e5e7eb; font-size: 12px; font-size: 0.83cqw; color: #374151; }
+  .sheet-card__free { color: #059669; font-weight: 600; }
+
+  [data-el="sheet-browse-label"] { left: 2.8%; top: 4.3%; }
+  [data-el="sheet-view-all"] { right: 2.8%; top: 5.4%; }
+  [data-el="sheet-cards"] { left: 2.8%; top: 10.7%; width: 94.4%; height: 78.6%; }
+
+  .sheet-detail__back { position: absolute; color: var(--text-muted); font-size: 20px; font-size: 1.39cqw; }
+  .sheet-detail__title { position: absolute; font-family: var(--font-display); font-size: 44px; font-size: 3.06cqw; font-weight: 800; line-height: 1.05; color: var(--text-primary); }
+  .sheet-detail__artist { position: absolute; font-family: var(--font-mono); font-size: 13px; font-size: 0.9cqw; letter-spacing: 0.04em; color: var(--text-secondary); text-transform: uppercase; }
+  .sheet-detail__pills { position: absolute; display: flex; gap: 6px; }
+  .sheet-detail__reviews { position: absolute; font-size: 12px; font-size: 0.83cqw; font-style: italic; color: var(--text-muted); }
+  .sheet-detail__stats { position: absolute; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .sheet-stat { display: flex; flex-direction: column; gap: 1px; }
+  .sheet-stat__value { font-size: 20px; font-size: 1.39cqw; font-weight: 700; color: var(--text-primary); }
+  .sheet-stat__label { font-family: var(--font-mono); font-size: 10px; font-size: 0.69cqw; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+  .sheet-detail__cover { position: absolute; overflow: hidden; border-radius: 16px; border-radius: 1.11cqw; background: linear-gradient(135deg, #14b8a6, #0d9488); }
+  .sheet-detail__cover::after { content: ""; position: absolute; inset: 0; background-image: repeating-linear-gradient(0deg, transparent 0 16px, rgba(255, 255, 255, 0.13) 16px 17px), repeating-linear-gradient(90deg, transparent 0 16px, rgba(255, 255, 255, 0.06) 16px 17px); }
+  .sheet-detail__play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; width: 72px; width: 5cqw; height: 72px; height: 5cqw; display: flex; align-items: center; justify-content: center; background: #ffffff; color: #2563eb; border-radius: 50%; font-size: 26px; font-size: 1.81cqw; }
+  .sheet-detail__rail { position: absolute; display: flex; flex-direction: column; gap: 12px; gap: 0.83cqw; }
+  .sheet-rail__primary { display: flex; align-items: center; justify-content: center; height: 44px; height: 3.06cqw; background: #2563eb; color: #fff; border-radius: 8px; border-radius: 0.56cqw; font-size: 14px; font-size: 0.97cqw; font-weight: 600; }
+  .sheet-rail__uploaded { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; border-radius: 0.56cqw; }
+  .sheet-rail__avatar { flex: 0 0 auto; width: 28px; width: 1.94cqw; height: 28px; height: 1.94cqw; border-radius: 50%; background: #4b5563; }
+  .sheet-rail__label { display: block; font-family: var(--font-mono); font-size: 9px; font-size: 0.63cqw; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+  .sheet-rail__name { display: block; font-size: 13px; font-size: 0.9cqw; color: var(--text-primary); }
+  .sheet-rail__button { display: flex; align-items: center; justify-content: center; height: 44px; height: 3.06cqw; border: 1px solid var(--border-strong); border-radius: 8px; border-radius: 0.56cqw; font-size: 14px; font-size: 0.97cqw; color: var(--text-primary); }
+  .sheet-rail__favorite { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-mono); font-size: 11px; font-size: 0.76cqw; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); }
+  .sheet-rail__report { font-size: 12px; font-size: 0.83cqw; color: var(--text-muted); }
+
+  [data-el="sheet-detail-back"] { left: 2.8%; top: 5.4%; }
+  [data-el="sheet-detail-title"] { left: 2.8%; top: 9%; width: 50%; }
+  [data-el="sheet-detail-artist"] { left: 2.8%; top: 20%; width: 50%; }
+  [data-el="sheet-detail-pills"] { left: 2.8%; top: 26%; width: 50%; }
+  [data-el="sheet-detail-reviews"] { left: 2.8%; top: 31.5%; }
+  [data-el="sheet-detail-stats"] { left: 55.6%; top: 7.1%; width: 41.7%; height: 23%; }
+  [data-el="sheet-detail-cover"] { left: 2.8%; top: 34%; width: 50%; height: 60.7%; }
+  [data-el="sheet-detail-rail"] { left: 55.6%; top: 34%; width: 41.7%; height: 60.7%; }
+
+  .sheet-practice__header { position: absolute; font-family: var(--font-mono); font-size: 13px; font-size: 0.9cqw; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-primary); }
+  .sheet-practice__speed { position: absolute; font-family: var(--font-mono); font-size: 12px; font-size: 0.83cqw; color: var(--text-muted); text-align: right; }
+  .sheet-practice__timeline { position: absolute; }
+  .sheet-practice__axis { position: absolute; left: 0; right: 0; bottom: 8px; height: 1px; background: rgba(255, 255, 255, 0.2); }
+  .sheet-practice__tick { position: absolute; bottom: -14px; font-family: var(--font-mono); font-size: 10px; font-size: 0.69cqw; color: var(--text-muted); transform: translateX(-50%); }
+  .sheet-practice__grid { position: absolute; display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; gap: 1.04cqw; }
+  .sheet-key { display: flex; align-items: center; justify-content: center; background: #141416; border: 1px solid var(--border-strong); border-radius: 8px; border-radius: 0.56cqw; font-family: var(--font-mono); font-size: 14px; font-size: 0.97cqw; color: var(--text-muted); }
+  .sheet-key.is-lit { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
+
+  [data-el="sheet-practice-header"] { left: 2.8%; top: 4.3%; }
+  [data-el="sheet-practice-speed"] { right: 2.8%; top: 4.3%; width: 20.8%; }
+  [data-el="sheet-practice-note"] { left: 2.8%; top: 9.3%; }
+  [data-el="sheet-practice-timeline"] { left: 8.3%; top: 16%; width: 83.3%; height: 21.4%; }
+  [data-el="sheet-practice-grid"] { left: 25.7%; top: 46.4%; width: 48.6%; height: 45%; }
+
+  /* ---- Piano ---- */
+  .scene--piano-timeline, .scene--piano-keyboard { opacity: 0.25; }
+  .piano-card { position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 2px; background: #141416; border: 1px solid var(--border-strong); border-radius: 10px; border-radius: 1.11cqw; padding: 10px 14px; padding: 1.11cqw 1.56cqw; }
+  .piano-card__title { font-family: var(--font-mono); font-size: 15px; font-size: 1.67cqw; font-weight: 500; color: var(--text-primary); }
+  .piano-card__sub { font-size: 11px; font-size: 1.22cqw; color: var(--text-muted); }
+  .piano-card__badge { font-family: var(--font-mono); font-size: 10px; font-size: 1.11cqw; color: var(--text-muted); }
+  .piano-bar { position: absolute; background: #2a2a2e; border: 1px solid #3a3a3e; border-radius: 3px; }
+  .piano-bar.is-lit { background: var(--accent-red); border-color: var(--accent-red); }
+  .piano-ticks { position: absolute; }
+  .piano-ticks span { position: absolute; top: 0; font-family: var(--font-mono); font-size: 10px; font-size: 1.11cqw; color: var(--text-muted); transform: translateX(-50%); }
+  .piano-ticks span:first-child { transform: none; }
+  .piano-ticks span:last-child { transform: translateX(-100%); }
+  .piano-footer { position: absolute; display: flex; align-items: center; gap: 16px; gap: 1.78cqw; background: #141416; border: 1px solid var(--border-strong); border-radius: 8px; border-radius: 0.89cqw; padding: 0 14px; padding: 0 1.56cqw; }
+  .piano-footer__song { font-family: var(--font-mono); font-size: 12px; font-size: 1.33cqw; color: var(--text-primary); white-space: nowrap; }
+  .piano-footer__slider { flex: 1; height: 4px; background: #2a2a2e; border-radius: 999px; overflow: hidden; }
+  .piano-footer__fill { display: block; height: 100%; width: 0%; background: var(--accent-red); }
+  .piano-footer__time { font-family: var(--font-mono); font-size: 11px; font-size: 1.22cqw; color: var(--text-muted); white-space: nowrap; }
+  .piano-footer__speed { font-family: var(--font-mono); font-size: 11px; font-size: 1.22cqw; color: var(--text-muted); white-space: nowrap; }
+  .piano-footer__toggle { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; font-size: 1.22cqw; color: var(--text-secondary); white-space: nowrap; }
+  .piano-footer__dot { width: 8px; width: 0.89cqw; height: 8px; height: 0.89cqw; border-radius: 50%; background: var(--accent-red); }
+  .piano-keyboard { position: absolute; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; gap: 0.89cqw; }
+  .piano-key { display: flex; align-items: center; justify-content: center; background: #141416; border: 1px solid var(--border-strong); border-radius: 6px; border-radius: 0.67cqw; font-family: var(--font-mono); font-size: 13px; font-size: 1.44cqw; color: var(--text-secondary); }
+  .piano-key.is-lit { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
+
+  [data-el="piano-card"] { left: 4.4%; top: 4.3%; width: 28.9%; height: 17.1%; }
+  [data-el="piano-snippet"] { left: 35.6%; top: 7.1%; width: 26.7%; }
+  [data-el="piano-caption"] { left: 35.6%; top: 20%; width: 26.7%; }
+  [data-el="piano-timeline-label"] { left: 4.4%; top: 35%; width: 63%; }
+  [data-el="piano-mapping"] { left: 68.9%; top: 35%; width: 26.7%; }
+  [data-el="piano-ticks"] { left: 6.7%; top: 58.9%; width: 86.7%; height: 3%; }
+  [data-el="piano-bar-1"] { left: 6.7%; top: 44.6%; width: 3.6%; height: 5.4%; }
+  [data-el="piano-bar-2"] { left: 17.5%; top: 51.8%; width: 3.6%; height: 5.4%; }
+  [data-el="piano-bar-3"] { left: 28.3%; top: 44.6%; width: 3.6%; height: 5.4%; }
+  [data-el="piano-bar-4"] { left: 39.2%; top: 44.6%; width: 3.6%; height: 5.4%; }
+  [data-el="piano-bar-5"] { left: 39.2%; top: 51.8%; width: 3.6%; height: 5.4%; }
+  [data-el="piano-bar-6"] { left: 50%; top: 51.8%; width: 18.1%; height: 5.4%; }
+  [data-el="piano-bar-7"] { left: 71.7%; top: 44.6%; width: 3.6%; height: 5.4%; }
+  [data-el="piano-bar-8"] { left: 82.5%; top: 51.8%; width: 3.6%; height: 5.4%; }
+  [data-el="piano-footer"] { left: 26%; top: 65.7%; width: 48%; height: 5%; }
+  [data-el="piano-lp-caption"] { left: 26%; top: 71.4%; }
+  [data-el="piano-keyboard-grid"] { left: 26%; top: 74.3%; width: 48%; height: 23.6%; }
 
   @media (max-width: 700px) {
     .project-thread-stage { aspect-ratio: 1 / 1; }
     .project-thread-svg--desktop { display: none; }
     .project-thread-svg--mobile { display: block; }
     .project-thread-path { stroke-width: 1.7px; }
-    .project-thread-label { font-size: 13px; }
-    /* The two top labels together are wider than a 354px stage, so they
-       collided (E2EE and Sheet Store). Keep only the left one on mobile;
-       the motif and the phase captions carry the story. */
+    /* The top-right label is hidden on mobile (round-8 overlap fix); the
+       left label and the scenes carry the story. */
     .visual-label--top-right { display: none; }
+    .visual-label--top { top: 0.9rem; left: 0.9rem; font-size: 0.56rem; max-width: none; }
+    .final-caption { bottom: 0.4rem; font-size: 9px; font-size: 1.61cqw; }
+
+    /* E2EE mobile (560x560, stacked journey) */
+    [data-el="e2ee-label-a"] { left: 5%; top: 25.7%; width: 12.1%; }
+    [data-el="e2ee-bubble-a"] { left: 19.6%; top: 10.7%; width: 26.8%; height: 8.9%; }
+    [data-el="e2ee-mono-a"] { left: 19.6%; top: 21.4%; width: 74%; }
+    [data-el="e2ee-signal-label"] { left: 62.5%; top: 55%; width: 34.6%; text-align: left; }
+    [data-el="e2ee-noise-label"] { left: 62.5%; top: 66.4%; width: 34.6%; text-align: left; }
+    [data-el="e2ee-relay-label"] { left: 2.9%; top: 66.4%; width: 34.6%; text-align: right; }
+    [data-el="e2ee-label-b"] { left: 5%; top: 75.7%; width: 12.1%; }
+    [data-el="e2ee-bubble-b"] { left: 19.6%; top: 83.2%; width: 26.8%; height: 8.9%; }
+    [data-el="e2ee-mono-b"] { left: 19.6%; top: 93.2%; width: 74%; }
+    .scene-label, .mono-caption { font-size: 10px; font-size: 1.79cqw; }
+    .bubble { font-size: 14px; font-size: 2.5cqw; }
+
+    /* Sheet Store mobile: cards stack as horizontal rows; detail shows
+       cover + title + stats with a collapsed rail; practice keeps the
+       timeline above a compact 15-key grid. */
+    .sheet-section-label { font-size: 15px; font-size: 2.68cqw; }
+    .sheet-view-all { display: none; }
+    .sheet-cards { flex-direction: column; gap: 12px; }
+    .sheet-card { flex-direction: row; flex: 1; }
+    .sheet-card__cover { flex: 0 0 110px; flex-basis: 19.64cqw; }
+    .sheet-card__body { gap: 1px; padding: 8px 10px; }
+    .sheet-card__title { font-size: 14px; font-size: 2.5cqw; }
+    .sheet-card__line { font-size: 10px; font-size: 1.79cqw; }
+    .sheet-card__line--muted, .sheet-card__reviews { display: none; }
+    .sheet-card__pills { margin-top: 2px; }
+    .sheet-pill { font-size: 9px; font-size: 1.61cqw; }
+    .sheet-card__stats { font-size: 10px; font-size: 1.79cqw; padding-top: 4px; }
+    .sheet-card__notes { font-size: 26px; font-size: 4.64cqw; }
+    .sheet-card__notes--small { font-size: 14px; font-size: 2.5cqw; }
+    [data-el="sheet-browse-label"] { left: 2.9%; top: 2.9%; }
+    [data-el="sheet-cards"] { left: 2.9%; top: 8.9%; width: 94.3%; height: 76%; }
+
+    .sheet-detail__back { display: none; }
+    .sheet-detail__title { font-size: 30px; font-size: 5.36cqw; }
+    .sheet-detail__artist { font-size: 11px; font-size: 1.96cqw; }
+    .sheet-detail__reviews { display: none; }
+    .sheet-detail__stats { grid-template-columns: repeat(2, 1fr); }
+    .sheet-stat__value { font-size: 16px; font-size: 2.86cqw; }
+    .sheet-stat__label { font-size: 9px; font-size: 1.61cqw; }
+    .sheet-detail__play { width: 56px; width: 10cqw; height: 56px; height: 10cqw; font-size: 20px; font-size: 3.57cqw; }
+    .sheet-rail__primary, .sheet-rail__button { height: 45px; height: 8.04cqw; font-size: 13px; font-size: 2.32cqw; }
+    .sheet-rail__uploaded, .sheet-rail__report { display: none; }
+    /* Fix round: the Favorite row kept the desktop 0.76cqw font, which is
+       2.7px on the 354px mobile stage - a microscopic smudge that read as
+       a clipped rail. It now matches the other mobile mono labels. */
+    .sheet-rail__favorite { font-size: 10px; font-size: 1.79cqw; }
+    [data-el="sheet-detail-title"] { left: 2.9%; top: 40%; width: 94.3%; }
+    [data-el="sheet-detail-artist"] { left: 2.9%; top: 47.5%; width: 94.3%; }
+    [data-el="sheet-detail-pills"] { left: 2.9%; top: 52.5%; width: 94.3%; }
+    [data-el="sheet-detail-stats"] { left: 2.9%; top: 58%; width: 47.9%; height: 30%; }
+    [data-el="sheet-detail-cover"] { left: 2.9%; top: 2.9%; width: 94.3%; height: 35.7%; }
+    [data-el="sheet-detail-rail"] { left: 55%; top: 58%; width: 42.1%; height: 40%; }
+
+    .sheet-practice__header { font-size: 12px; font-size: 2.14cqw; }
+    .sheet-practice__speed { font-size: 11px; font-size: 1.96cqw; }
+    .sheet-practice__grid { gap: 10px; gap: 1.79cqw; }
+    .sheet-key { font-size: 12px; font-size: 2.14cqw; }
+    [data-el="sheet-practice-header"] { left: 3.6%; top: 2.9%; }
+    [data-el="sheet-practice-speed"] { left: 60%; top: 2.9%; width: 36.4%; right: auto; }
+    [data-el="sheet-practice-note"] { left: 3.6%; top: 8%; font-size: 10px; font-size: 1.79cqw; }
+    [data-el="sheet-practice-timeline"] { left: 5.4%; top: 16%; width: 89.3%; height: 16%; }
+    [data-el="sheet-practice-grid"] { left: 3.6%; top: 37.5%; width: 92.9%; height: 58%; }
+
+    /* Piano mobile: file chip on top, timeline middle, keyboard bottom. */
+    .piano-card__title { font-size: 14px; font-size: 2.5cqw; }
+    .piano-card__sub { font-size: 10px; font-size: 1.79cqw; }
+    .piano-card__badge { font-size: 9px; font-size: 1.61cqw; }
+    .piano-footer__song, .piano-footer__time, .piano-footer__speed, .piano-footer__toggle { font-size: 11px; font-size: 1.96cqw; }
+    .piano-key { font-size: 12px; font-size: 2.14cqw; }
+    [data-el="piano-card"] { left: 3.6%; top: 7.1%; width: 50%; height: 12.5%; }
+    [data-el="piano-snippet"] { left: 57.1%; top: 7.1%; width: 39.3%; }
+    [data-el="piano-caption"] { left: 57.1%; top: 21.4%; width: 39.3%; }
+    [data-el="piano-timeline-label"] { left: 3.6%; top: 32.1%; width: 92.9%; }
+    [data-el="piano-mapping"] { left: 50%; top: 38.2%; width: 46.4%; }
+    [data-el="piano-ticks"] { left: 5.4%; top: 55%; width: 89.3%; height: 3%; }
+    [data-el="piano-bar-1"] { left: 5.4%; top: 41.1%; width: 3.7%; height: 5%; }
+    [data-el="piano-bar-2"] { left: 16.5%; top: 47.1%; width: 3.7%; height: 5%; }
+    [data-el="piano-bar-3"] { left: 27.7%; top: 41.1%; width: 3.7%; height: 5%; }
+    [data-el="piano-bar-4"] { left: 38.8%; top: 41.1%; width: 3.7%; height: 5%; }
+    [data-el="piano-bar-5"] { left: 38.8%; top: 47.1%; width: 3.7%; height: 5%; }
+    [data-el="piano-bar-6"] { left: 50%; top: 47.1%; width: 18.6%; height: 5%; }
+    [data-el="piano-bar-7"] { left: 72.3%; top: 41.1%; width: 3.7%; height: 5%; }
+    [data-el="piano-bar-8"] { left: 83.5%; top: 47.1%; width: 3.7%; height: 5%; }
+    [data-el="piano-footer"] { left: 4.3%; top: 58.9%; width: 78.6%; height: 10.7%; flex-wrap: wrap; gap: 6px 12px; padding: 6px 10px; }
+    [data-el="piano-lp-caption"] { left: 4.3%; top: 70.4%; }
+    [data-el="piano-keyboard-grid"] { left: 4.3%; top: 74.6%; width: 91.4%; height: 23.6%; }
   }
 </style>

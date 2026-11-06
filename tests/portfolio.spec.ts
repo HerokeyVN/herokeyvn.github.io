@@ -212,6 +212,236 @@ test("keeps each project motif inside its stage and off project content", async 
   expect(result.contentHits).toEqual([]);
 });
 
+test("keeps each project motif's DOM scenes inside its stage", async ({ page }) => {
+  // Round 9 added real DOM scenes (cards, detail rail, practice grid,
+  // keyboard, footer) inside the stages. A mis-positioned scene would be
+  // clipped by the stage's overflow, so every descendant must sit inside
+  // the stage box. Display-none variant markup is skipped (zero rect).
+  await page.goto("/");
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll<SVGPathElement>(".project-thread-path")]
+      .reduce((total, path) => total + path.getTotalLength(), 0) > 1000,
+  );
+
+  const result = await page.evaluate(() => {
+    const outside: { slug: string; el: string; box: string }[] = [];
+    for (const stage of [...document.querySelectorAll<HTMLElement>("[data-project-thread-stage]")]) {
+      const slug = stage.closest<HTMLElement>("article[data-project]")?.id || "";
+      const stageBox = stage.getBoundingClientRect();
+      const top = stageBox.top + scrollY;
+      for (const el of [stage, ...stage.querySelectorAll<HTMLElement>("*")]) {
+        const box = el.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) continue;
+        if (
+          box.left < stageBox.left - 2 ||
+          box.right > stageBox.right + 2 ||
+          box.top + scrollY < top - 2 ||
+          box.bottom + scrollY > stageBox.bottom + scrollY + 2
+        ) {
+          outside.push({
+            slug,
+            el: el.tagName.toLowerCase() + (el.dataset.el ? `[data-el="${el.dataset.el}"]` : `.${String(el.className).split(" ")[0]}`),
+            box: JSON.stringify({ l: Math.round(box.left), r: Math.round(box.right), t: Math.round(box.top), b: Math.round(box.bottom) }),
+          });
+        }
+      }
+    }
+    return outside.slice(0, 10);
+  });
+
+  expect(result).toEqual([]);
+});
+
+test("project visuals reach their final storyboard state at full scrub", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForLoadState("domcontentloaded");
+  await page.evaluate(() => document.fonts.ready);
+  await page.addStyleTag({ content: "html{scroll-behavior:auto !important}" });
+
+  const scrollToP = async (slug: string, p: number) => {
+    const { startY, endY } = await page.evaluate((s) => {
+      const a = document.getElementById(s)!;
+      const r = a.getBoundingClientRect();
+      const vh = window.innerHeight;
+      return {
+        startY: Math.round(r.top + scrollY - vh * 0.8),
+        endY: Math.round(r.bottom + scrollY - vh * 0.45),
+      };
+    }, slug);
+    await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), Math.round(startY + (endY - startY) * p));
+    await page.waitForTimeout(3000);
+  };
+
+  // E2EE mid: the Signal label is lit, Device B is still unreadable.
+  await scrollToP("fb-messenger-e2ee", 0.5);
+  const e2eeMid = await page.evaluate(() => {
+    const stage = document.querySelector('[data-project-slug="fb-messenger-e2ee"]')!;
+    const opacity = (name: string) => Number(getComputedStyle(stage.querySelector(`[data-el="${name}"]`)!).opacity);
+    return { signal: opacity("e2ee-signal-label"), bubbleB: opacity("e2ee-bubble-b") };
+  });
+  expect(e2eeMid.signal).toBeGreaterThan(0.8);
+  expect(e2eeMid.bubbleB).toBe(0);
+
+  // E2EE final: Device B readable, final caption shown. Scroll 5% past the
+  // trigger end (not 1%): each project article carries a motion entrance
+  // tween (y: 22, data-reveal) that settles after the thread ScrollTrigger
+  // measured its positions, so the trigger's cached end sits ~22px low and
+  // p would otherwise stop at ~0.99 on mobile. The extra margin reaches
+  // true p = 1; it does not loosen the assertions below.
+  await scrollToP("fb-messenger-e2ee", 1.05);
+  const e2eeFinal = await page.evaluate(() => {
+    const stage = document.querySelector('[data-project-slug="fb-messenger-e2ee"]')!;
+    const opacity = (name: string) => Number(getComputedStyle(stage.querySelector(`[data-el="${name}"]`)!).opacity);
+    return { bubbleB: opacity("e2ee-bubble-b"), caption: opacity("e2ee-final-caption") };
+  });
+  expect(e2eeFinal.bubbleB).toBe(1);
+  expect(e2eeFinal.caption).toBe(1);
+
+  // Sheet Store final: practice view visible, last key (14) highlighted,
+  // last timeline dot lit.
+  await scrollToP("sky-sheet-store", 1.05);
+  const sheetFinal = await page.evaluate(() => {
+    const stage = document.querySelector('[data-project-slug="sky-sheet-store"]')!;
+    // Two SVGs carry dots (desktop + mobile); only the active variant's
+    // dots are driven, so check the visible one - `some` is exact here
+    // because the hidden variant's dots are never lit.
+    const dot7Lit = [...stage.querySelectorAll('[data-note="7"]')].some((dot) =>
+      dot.classList.contains("is-lit"),
+    );
+    return {
+      practice: Number(getComputedStyle(stage.querySelector('[data-scene="sheet-practice"]')!).opacity),
+      key14: stage.querySelector('[data-key="14"]')!.classList.contains("is-lit"),
+      dot7: dot7Lit,
+    };
+  });
+  expect(sheetFinal.practice).toBe(1);
+  expect(sheetFinal.key14).toBe(true);
+  expect(sheetFinal.dot7).toBe(true);
+
+  // Piano final: slider full, live time at the 12s total.
+  await scrollToP("sky-auto-piano", 1.05);
+  const pianoFinal = await page.evaluate(() => {
+    const stage = document.querySelector('[data-project-slug="sky-auto-piano"]')!;
+    return {
+      slider: (stage.querySelector('[data-el="piano-slider-fill"]') as HTMLElement).style.width,
+      time: stage.querySelector('[data-el="piano-live-time"]')!.textContent,
+    };
+  });
+  expect(pianoFinal.slider).toBe("100%");
+  expect(pianoFinal.time).toBe("0:12");
+});
+
+test("project motif threads keep clear of in-stage text and end on their target", async ({ page }) => {
+  // Fix-round regression test (honest extension of the collision tests):
+  // the Sheet Store detail loop grazed the stat values and a practice dot
+  // sat on "2.96"; the Piano entry grazed the timeline label; the mobile
+  // detail arc ended beside Share Sheet instead of at Open Player.
+  await page.goto("/");
+  await page.waitForLoadState("domcontentloaded");
+  await page.evaluate(() => document.fonts.ready);
+  await page.addStyleTag({ content: "html{scroll-behavior:auto !important}" });
+
+  const scrollToP = async (slug: string, p: number) => {
+    const { startY, endY } = await page.evaluate((s) => {
+      const a = document.getElementById(s)!;
+      const r = a.getBoundingClientRect();
+      const vh = window.innerHeight;
+      return {
+        startY: Math.round(r.top + scrollY - vh * 0.8),
+        endY: Math.round(r.bottom + scrollY - vh * 0.45),
+      };
+    }, slug);
+    await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), Math.round(startY + (endY - startY) * p));
+    await page.waitForTimeout(3000);
+  };
+
+  // Min screen-px distance from a thread path's samples to each box matched
+  // by `selector`, and how many samples fall inside the first box. The
+  // active variant is the SVG whose display is not none.
+  const pathClearance = (slug: string, thread: string, selector: string) =>
+    page.evaluate(
+      ({ s, t, sel }) => {
+        const stage = document.querySelector(`[data-project-slug="${s}"]`)!;
+        const svg = [...stage.querySelectorAll("svg.project-thread-svg")].find(
+          (el) => getComputedStyle(el).display !== "none",
+        )!;
+        const path = svg.querySelector<SVGPathElement>(`[data-thread="${t}"]`)!;
+        const boxes = [...stage.querySelectorAll(sel)].map((el) => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        });
+        const first = boxes[0]!;
+        const ctm = path.getScreenCTM()!;
+        const length = path.getTotalLength();
+        let min = Number.POSITIVE_INFINITY;
+        let inside = 0;
+        for (let d = 0; d <= length; d += 2) {
+          const pt = path.getPointAtLength(d);
+          const sp = new DOMPoint(pt.x, pt.y).matrixTransform(ctm);
+          for (const b of boxes) {
+            const dx = Math.max(b.left - sp.x, 0, sp.x - b.right);
+            const dy = Math.max(b.top - sp.y, 0, sp.y - b.bottom);
+            min = Math.min(min, Math.hypot(dx, dy));
+          }
+          if (sp.x >= first.left && sp.x <= first.right && sp.y >= first.top && sp.y <= first.bottom) inside++;
+        }
+        return { min: Math.round(min * 10) / 10, inside };
+      },
+      { s: slug, t: thread, sel: selector },
+    );
+
+  // Sheet Store mid: the detail thread stays clear of every stat value,
+  // and the practice dots are hidden until the practice view fades in.
+  await scrollToP("sky-sheet-store", 0.5);
+  const sheetMid = await pathClearance("sky-sheet-store", "detail", ".sheet-stat__value");
+  expect(sheetMid.min).toBeGreaterThanOrEqual(20);
+  const dotsHidden = await page.evaluate(() => {
+    const stage = document.querySelector('[data-project-slug="sky-sheet-store"]')!;
+    const svg = [...stage.querySelectorAll("svg.project-thread-svg")].find(
+      (el) => getComputedStyle(el).display !== "none",
+    )!;
+    return [...svg.querySelectorAll("[data-note]")].every((dot) => getComputedStyle(dot).opacity === "0");
+  });
+  expect(dotsHidden).toBe(true);
+
+  // Piano mid: the entry thread stays clear of the timeline label and never
+  // crosses it.
+  await scrollToP("sky-auto-piano", 0.5);
+  const pianoMid = await pathClearance("sky-auto-piano", "entry", '[data-el="piano-timeline-label"]');
+  expect(pianoMid.min).toBeGreaterThanOrEqual(6);
+  expect(pianoMid.inside).toBe(0);
+
+  // Sheet Store final: the practice thread starts exactly on the first
+  // timeline note (no connector before the melody), and the detail thread
+  // ends inside the Open Player button.
+  await scrollToP("sky-sheet-store", 1.05);
+  const sheetFinal = await page.evaluate(() => {
+    const stage = document.querySelector('[data-project-slug="sky-sheet-store"]')!;
+    const svg = [...stage.querySelectorAll("svg.project-thread-svg")].find(
+      (el) => getComputedStyle(el).display !== "none",
+    )!;
+    const toScreen = (el: SVGGeometryElement, x: number, y: number) => {
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    };
+    const practice = svg.querySelector<SVGPathElement>('[data-thread="practice"]')!;
+    const dot0 = svg.querySelector<SVGCircleElement>('[data-note="0"]')!;
+    const start = practice.getPointAtLength(0);
+    const startScreen = toScreen(practice, start.x, start.y);
+    const dotScreen = toScreen(dot0, Number(dot0.getAttribute("cx")), Number(dot0.getAttribute("cy")));
+    const startGap = Math.hypot(startScreen.x - dotScreen.x, startScreen.y - dotScreen.y);
+    const detail = svg.querySelector<SVGPathElement>('[data-thread="detail"]')!;
+    const end = detail.getPointAtLength(detail.getTotalLength());
+    const endScreen = toScreen(detail, end.x, end.y);
+    const op = stage.querySelector(".sheet-rail__primary")!.getBoundingClientRect();
+    const endInPlayer =
+      endScreen.x >= op.left && endScreen.x <= op.right && endScreen.y >= op.top && endScreen.y <= op.bottom;
+    return { startGap: Math.round(startGap * 10) / 10, endInPlayer };
+  });
+  expect(sheetFinal.startGap).toBeLessThanOrEqual(2);
+  expect(sheetFinal.endInPlayer).toBe(true);
+});
+
 test("builds a continuous thread system around every outlined glyph", async ({ page }) => {
   // Assert explicit transition plan defines sparse, art-directed visible transitions
   expect(GLYPH_TRANSITIONS.length).toBeGreaterThanOrEqual(3);
