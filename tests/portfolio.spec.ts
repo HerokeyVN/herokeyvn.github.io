@@ -582,10 +582,16 @@ test("hero draw progress maintains completion invariant across responsive viewpo
     { width: 390, height: 844 },
   ];
 
+  // One page load for all nine viewports: resizing re-measures the hero
+  // thread through its resize listener and switches the gsap.matchMedia
+  // context, so a fresh navigation per viewport is redundant. Nine gotos
+  // pushed this test to the 30 s timeout under full-suite load even though
+  // every assertion held; resizing keeps the same invariants with headroom.
+  await page.goto("/");
+  await page.waitForLoadState("domcontentloaded");
+
   for (const vp of viewports) {
     await page.setViewportSize(vp);
-    await page.goto("/");
-    await page.waitForLoadState("domcontentloaded");
 
     await page.evaluate(() => {
       const hero = document.getElementById("top") || document.querySelector(".hero");
