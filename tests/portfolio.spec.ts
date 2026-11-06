@@ -111,8 +111,21 @@ test("keeps the site thread outside protected content", async ({ page }) => {
 
   const collisions = await page.evaluate(() => {
     const paths = [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")];
-    const protectedElements = [...document.querySelectorAll<HTMLElement>("p, a, button, nav, .initiative-card, .skill-row, .education")]
-      .filter((element) => !element.closest("#top") && !element.closest(".site-header"));
+    // Headings, project content and exhibit stages are protected. The
+    // About heading itself is excluded: its outline span holds the glyphs
+    // and the connector (segment 6) is designed to enter it from the right
+    // gutter to meet the first glyph junction. The filled "BUILT FOR THE
+    // PARTS" span and the kicker are still protected for every segment, so
+    // the connector may only touch the outline area on its final approach.
+    const protectedElements = [
+      ...document.querySelectorAll<HTMLElement>(
+        "p, a, button, nav, .initiative-card, .skill-row, .education, h1, h2, h3, .project-name, .project-description, .tech-tag, .project-exhibit, .project-exhibit__visual, .about__kicker",
+      ),
+      document.querySelector<HTMLElement>(".about__title > span:first-child"),
+    ]
+      .filter((element): element is HTMLElement => Boolean(element))
+      .filter((element) => !element.closest("#top") && !element.closest(".site-header"))
+      .filter((element) => !element.classList.contains("about__title"));
     const boxes = protectedElements.map((element) => {
       const box = element.getBoundingClientRect();
       return {
@@ -122,13 +135,21 @@ test("keeps the site thread outside protected content", async ({ page }) => {
         bottom: box.bottom + scrollY + 6,
       };
     });
-    const hits: number[] = [];
+    const hits: { segment: number; distance: number }[] = [];
     for (const path of paths) {
+      const segment = Number(path.dataset.siteThreadSegment || 0);
       const length = path.getTotalLength();
+      // Segment 6 is the connector whose endpoint is designed to meet the
+      // first glyph junction. On mobile that junction sits 4 px below the
+      // filled headline span, inside its 6 px margin, so samples within
+      // 24 px of the endpoint are excluded: the connector may only touch
+      // protected content at its designed junction, never along its run.
+      const end = segment === 6 ? path.getPointAtLength(length) : null;
       for (let distance = 0; distance <= length; distance += 4) {
         const point = path.getPointAtLength(distance);
+        if (end && Math.hypot(point.x - end.x, point.y - end.y) < 24) continue;
         if (boxes.some((box) => point.x > box.left && point.x < box.right && point.y > box.top && point.y < box.bottom)) {
-          hits.push(distance);
+          hits.push({ segment, distance });
         }
       }
     }
@@ -136,6 +157,59 @@ test("keeps the site thread outside protected content", async ({ page }) => {
   });
 
   expect(collisions).toEqual([]);
+});
+
+test("keeps each project motif inside its stage and off project content", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll<SVGPathElement>(".project-thread-path")]
+      .reduce((total, path) => total + path.getTotalLength(), 0) > 1000,
+  );
+
+  const result = await page.evaluate(() => {
+    const isMobile = window.innerWidth <= 700;
+    const variant = isMobile ? "mobile" : "desktop";
+    const stages = [...document.querySelectorAll<HTMLElement>("[data-project-thread-stage]")];
+    const outsideStage: { slug: string; x: number; y: number }[] = [];
+    const contentHits: { slug: string; selector: string }[] = [];
+    for (const stage of stages) {
+      const svg = stage.querySelector<SVGSVGElement>(`svg[data-variant="${variant}"]`);
+      const path = svg?.querySelector<SVGPathElement>(".project-thread-path");
+      const article = stage.closest<HTMLElement>("article[data-project]");
+      if (!svg || !path || !article) continue;
+      const slug = article.id;
+      const stageBox = stage.getBoundingClientRect();
+      const contentBoxes = [...article.querySelectorAll<HTMLElement>(".project-name, .project-description, .tech-tag, a, button, .project-exhibit__content")].map(
+        (element) => {
+          const box = element.getBoundingClientRect();
+          return {
+            selector: element.className || element.tagName,
+            left: box.left - 6,
+            right: box.right + 6,
+            top: box.top + scrollY - 6,
+            bottom: box.bottom + scrollY + 6,
+          };
+        },
+      );
+      const length = path.getTotalLength();
+      for (let distance = 0; distance <= length; distance += 4) {
+        const point = path.getPointAtLength(distance);
+        const matrix = path.getScreenCTM();
+        const screen = matrix ? new DOMPoint(point.x, point.y).matrixTransform(matrix) : point;
+        const x = screen.x;
+        const y = screen.y + scrollY;
+        if (x < stageBox.left - 2 || x > stageBox.right + 2 || y < stageBox.top + scrollY - 2 || y > stageBox.bottom + scrollY + 2) {
+          outsideStage.push({ slug, x: Math.round(x), y: Math.round(y) });
+        }
+        const hit = contentBoxes.find((box) => x > box.left && x < box.right && y > box.top && y < box.bottom);
+        if (hit) contentHits.push({ slug, selector: String(hit.selector) });
+      }
+    }
+    return { outsideStage: outsideStage.slice(0, 10), contentHits: contentHits.slice(0, 10) };
+  });
+
+  expect(result.outsideStage).toEqual([]);
+  expect(result.contentHits).toEqual([]);
 });
 
 test("builds a continuous thread system around every outlined glyph", async ({ page }) => {
