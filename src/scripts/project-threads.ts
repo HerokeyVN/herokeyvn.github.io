@@ -12,14 +12,20 @@ type MotifSpec = { boundaries: Boundary[] };
 
 const MOTIFS: Record<string, { desktop: MotifSpec; mobile: MotifSpec }> = {
   "fb-messenger-e2ee": {
-    // Straight A 0-0.35, knot 0.35-0.65, straight B 0.65-1.
-    desktop: { boundaries: [{ time: 0.35, x: 330, y: 280 }, { time: 0.65, x: 570, y: 280 }] },
-    mobile: { boundaries: [{ time: 0.35, x: 200, y: 280 }, { time: 0.65, x: 370, y: 280 }] },
+    // Straight A 0-0.3, knot 0.3-0.7, straight B 0.7-1. The knot loop
+    // returns to its start point, so neither boundary may use (240, 280):
+    // it is shared by the straight, the loop start, the loop end, and the
+    // exit, and the closest-sample search cannot tell them apart. The 0.3
+    // boundary uses an early loop point (248, 257); the 0.7 boundary uses
+    // the final approach point just below the return (loop drops vertically
+    // into it).
+    desktop: { boundaries: [{ time: 0.3, x: 248, y: 257 }, { time: 0.7, x: 240, y: 324 }] },
+    mobile: { boundaries: [{ time: 0.3, x: 148, y: 257 }, { time: 0.7, x: 140, y: 311 }] },
   },
   "sky-sheet-store": {
-    // Sine phrase 0-0.55, spiral 0.55-0.85, straight exit 0.85-1.
-    desktop: { boundaries: [{ time: 0.55, x: 958, y: 280 }, { time: 0.85, x: 996, y: 280 }] },
-    mobile: { boundaries: [{ time: 0.55, x: 438, y: 280 }, { time: 0.85, x: 470, y: 280 }] },
+    // Melody 0-0.5, record spiral 0.5-0.9, straight exit 0.9-1.
+    desktop: { boundaries: [{ time: 0.5, x: 1158, y: 280 }, { time: 0.9, x: 1345, y: 280 }] },
+    mobile: { boundaries: [{ time: 0.5, x: 288, y: 410 }, { time: 0.9, x: 385, y: 410 }] },
   },
   "sky-auto-piano": {
     // Linear scrub, no part boundaries.
@@ -73,6 +79,22 @@ export function initProjectThreads() {
         const length = path.getTotalLength();
         const nodes = [...svg.querySelectorAll<SVGCircleElement>("[data-thread-node], [data-thread-dot]")];
 
+        // The motif paths use vector-effect: non-scaling-stroke, which keeps
+        // the stroke at a constant 2px but also makes Chromium apply the
+        // dash pattern in screen units instead of viewBox units: a dash of
+        // `p * length` paints `p * length` SCREEN px of a path whose screen
+        // length is `length * scale`, so the render shows p / scale instead
+        // of p (Piano mid rendered 0.71 at p=0.5, stage scale 0.712; removing
+        // vector-effect rendered exactly 0.5). Scale the dash by the live
+        // CTM so the rendered fraction matches the scrub fraction. The
+        // Round 6 invariant is preserved, in screen units: "<visible>
+        // <length>", offset 0, "none" at completion. Recomputed on every
+        // onUpdate so resizes and the stage entrance transform stay correct.
+        const screenScale = () => {
+          const ctm = path.getScreenCTM();
+          return ctm ? Math.hypot(ctm.a, ctm.b) : 1;
+        };
+
         if (reduceMotion) {
           gsap.set(path, { strokeDasharray: "none", strokeDashoffset: 0, visibility: "visible" });
           gsap.set(nodes, { opacity: 1 });
@@ -82,8 +104,9 @@ export function initProjectThreads() {
         const proxy = { p: 0 };
         const applyDash = () => {
           const p = proxy.p;
+          const screenLength = length * screenScale();
           if (p <= 0) {
-            path.style.strokeDasharray = `0 ${length}`;
+            path.style.strokeDasharray = `0 ${screenLength}`;
             path.style.strokeDashoffset = "0";
             path.style.visibility = "hidden";
           } else if (p >= 1) {
@@ -91,7 +114,7 @@ export function initProjectThreads() {
             path.style.strokeDashoffset = "0";
             path.style.visibility = "visible";
           } else {
-            path.style.strokeDasharray = `${p * length} ${length}`;
+            path.style.strokeDasharray = `${p * screenLength} ${screenLength}`;
             path.style.strokeDashoffset = "0";
             path.style.visibility = "visible";
           }

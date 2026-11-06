@@ -6,128 +6,224 @@ const { project } = Astro.props;
 
 // Motif path builders. They run at build time and return deterministic
 // `d` strings; the scroll drawing itself lives in src/scripts/project-threads.ts.
+// Round 8 redesign: the round-7 motifs read as sparse abstract geometry on
+// big empty stages, so each motif now fills ~85% of its stage and draws a
+// recognizable story element (tangled knot, staff + vinyl, piano keyboard).
 
-// Sine phrase as a polyline sampled every 10px. Ends on the centre line
-// when (x1 - x0) is a whole number of wavelengths.
-const sinePath = (x0: number, x1: number, y: number, amp: number, wavelength: number) => {
-  let d = `M ${x0} ${y}`;
-  for (let x = x0 + 10; x <= x1; x += 10) {
-    const yy = y + amp * Math.sin((2 * Math.PI * (x - x0)) / wavelength);
-    d += ` L ${x} ${Math.round(yy * 10) / 10}`;
-  }
-  return d;
-};
+const r1 = (n: number) => Math.round(n * 10) / 10;
 
 // Archimedean spiral, radius r0 to r1 over `turns` turns, sampled every 6 degrees.
-const spiralPath = (cx: number, cy: number, r0: number, r1: number, turns: number) => {
+const spiralPath = (cx: number, cy: number, r0: number, rEnd: number, turns: number) => {
   const totalAngle = turns * 2 * Math.PI;
   const steps = Math.round(totalAngle / (Math.PI / 30));
   let d = "";
   for (let i = 0; i <= steps; i++) {
     const angle = (totalAngle * i) / steps;
-    const r = r0 + ((r1 - r0) * i) / steps;
-    const x = Math.round((cx + r * Math.cos(angle)) * 10) / 10;
-    const y = Math.round((cy + r * Math.sin(angle)) * 10) / 10;
+    const r = r0 + ((rEnd - r0) * i) / steps;
+    const x = r1(cx + r * Math.cos(angle));
+    const y = r1(cy + r * Math.sin(angle));
     d += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
   }
   return d;
 };
 
-// Staircase of 15 even steps. `accents` holds 0-based step indexes that rise higher.
-// Returns the path plus the accent peak positions (middle of each accent step top run).
-const stepsPath = (x0: number, baseY: number, w: number, rise: number, accentExtra: number, accents: number[]) => {
-  let d = `M ${x0} ${baseY}`;
-  let x = x0;
-  let y = baseY;
-  const peaks: { cx: number; cy: number }[] = [];
-  for (let i = 0; i < 15; i++) {
-    y -= rise + (accents.includes(i) ? accentExtra : 0);
-    d += ` L ${x} ${y}`;
-    if (accents.includes(i)) peaks.push({ cx: x + w / 2, cy: y });
-    x += w;
-    d += ` L ${x} ${y}`;
+// Proper-crossing count between non-adjacent segments of a polyline.
+// Build-time diagnostic for the E2EE knot density (target 8-10 crossings).
+type Pt = { x: number; y: number };
+const countCrossings = (pts: Pt[]) => {
+  const orient = (a: Pt, b: Pt, c: Pt) =>
+    Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+  let n = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    for (let j = i + 2; j < pts.length - 1; j++) {
+      if (i === 0 && j === pts.length - 2) continue;
+      const a = pts[i]!;
+      const b = pts[i + 1]!;
+      const c = pts[j]!;
+      const e = pts[j + 1]!;
+      const o1 = orient(a, b, c);
+      const o2 = orient(a, b, e);
+      const o3 = orient(c, e, a);
+      const o4 = orient(c, e, b);
+      if (o1 !== o2 && o3 !== o4) n++;
+    }
   }
-  return { d, endX: x, endY: y, peaks };
+  return n;
 };
 
-// Rising diagonal zigzag arpeggio.
-const zigzagPath = (x0: number, y0: number, x1: number, teeth: number, drop: number, rise: number) => {
-  let d = `M ${x0} ${y0}`;
-  let x = x0;
-  let y = y0;
-  const w = (x1 - x0) / teeth;
-  for (let i = 0; i < teeth; i++) {
-    x += w / 2;
-    y -= rise;
-    d += ` L ${x} ${y}`;
-    x += w / 2;
-    y += drop;
-    d += ` L ${x} ${y}`;
+// Dense tangled knot: one period of a perturbed 3:2 Lissajous figure.
+// t runs pi/2..5pi/2 so the loop starts and ends at the leftmost point
+// (cx-A, cy); the exit straight then runs from there through the ball to B,
+// like a thread passing through a ball of yarn. The perturbation breaks the
+// figure's exact symmetry so the loops read as a tangle, not a spirograph.
+// Returns the path and its self-crossing count (7, plus the through-line).
+const knotPath = (cx: number, cy: number, A: number, B: number, A2: number, B2: number) => {
+  const N = 240;
+  const pts: Pt[] = [];
+  for (let i = 0; i <= N; i++) {
+    const t = Math.PI / 2 + (2 * Math.PI * i) / N;
+    pts.push({
+      x: r1(cx + A * Math.sin(3 * t) + A2 * Math.cos(7 * t)),
+      y: r1(cy + B * Math.sin(2 * t) + B2 * Math.cos(5 * t)),
+    });
+  }
+  let d = "";
+  pts.forEach((p, i) => {
+    d += (i === 0 ? `M ${p.x} ${p.y}` : ` L ${p.x} ${p.y}`);
+  });
+  return { d, crossings: countCrossings(pts) };
+};
+
+// Smooth melody through note points (Catmull-Rom to Bezier). Points flagged
+// `loop` get a small note-head loop (near-full circle arc) drawn on the spot.
+type MelodyNote = { x: number; y: number; loop?: boolean };
+const melodyPath = (notes: MelodyNote[]) => {
+  const first = notes[0]!;
+  let d = `M ${first.x} ${first.y}`;
+  for (let i = 0; i < notes.length - 1; i++) {
+    const p0 = notes[Math.max(0, i - 1)]!;
+    const p1 = notes[i]!;
+    const p2 = notes[i + 1]!;
+    const p3 = notes[Math.min(notes.length - 1, i + 2)]!;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${r1(c1x)} ${r1(c1y)}, ${r1(c2x)} ${r1(c2y)}, ${p2.x} ${p2.y}`;
+    if (p2.loop) d += ` a 13 13 0 1 1 0.01 0`;
   }
   return d;
 };
 
-// 01 E2EE: straight from A, tangled knot, straight to B. The knot is
-// candidate B from the crossing-count probe: 4 self-crossings in a
-// compact box, straight runs clearly distinct from the tangle.
-const E2EE_KNOT =
-  "C 370 190, 430 190, 450 240 C 470 290, 430 350, 390 330 C 350 310, 370 230, 420 220 " +
-  "C 470 210, 510 250, 500 300 C 490 350, 440 370, 430 320 C 420 280, 500 280, 570 280";
-const E2EE_D = `M 60 280 L 330 280 ${E2EE_KNOT} L 840 280`;
-// Mobile knot: the desktop knot scaled 170/240 around its centre (450, 280)
-// into the mobile box (200-370, 280).
-const E2EE_KNOT_MOBILE =
-  "C 228.3 216.3, 270.8 216.3, 285 251.7 C 299.2 287.1, 270.8 329.6, 242.5 315.4 " +
-  "C 214.2 301.3, 228.3 244.6, 263.8 237.5 C 299.2 230.4, 327.5 258.8, 320.4 294.2 " +
-  "C 313.3 329.6, 277.9 343.8, 270.8 308.3 C 263.8 280, 320.4 280, 370 280";
-const E2EE_D_MOBILE = `M 30 280 L 200 280 ${E2EE_KNOT_MOBILE} L 530 280`;
+// Piano keyboard, drawn in one continuous serpentine: right edge up, then
+// alternating top/bottom runs so every key separator is drawn once and the
+// path ends at the top-left corner, ready for the steps.
+const keyboardPath = (x0: number, x1: number, yTop: number, yBottom: number, keys: number) => {
+  const w = (x1 - x0) / keys;
+  let d = `M ${x1} ${yBottom} L ${x1} ${yTop}`;
+  let x = x1;
+  let top = true;
+  for (let k = 0; k < keys; k++) {
+    x -= w;
+    d += ` L ${r1(x)} ${top ? yTop : yBottom} L ${r1(x)} ${top ? yBottom : yTop}`;
+    top = !top;
+  }
+  return d;
+};
 
-// 02 Sky Sheet Store: sine phrase, spiral, straight exit.
-const sheetWave = sinePath(40, 780, 280, 60, 130);
-const sheetSpiral = spiralPath(950, 280, 8, 46, 3).replace(/^M [\d.]+ [\d.]+/, "");
-const SHEET_D = `${sheetWave} L 958 280${sheetSpiral} L 1400 320`;
-const sheetWaveMobile = sinePath(30, 300, 280, 50, 90);
-const sheetSpiralMobile = spiralPath(430, 280, 8, 40, 2).replace(/^M [\d.]+ [\d.]+/, "");
-const SHEET_D_MOBILE = `${sheetWaveMobile} L 438 280${sheetSpiralMobile} L 540 330`;
+// 01 E2EE: short straight from A, big dense knot centrepiece, straight
+// to B. The knot is one period of a perturbed 3:2 Lissajous figure; the
+// straight to B runs through the ball from the loop's return point.
+const E2EE_KNOT = knotPath(450, 280, 210, 190, 15, 12);
+const E2EE_KNOT_MOBILE = knotPath(280, 280, 140, 135, 10, 8);
+console.log(`[motif] E2EE knot crossings desktop=${E2EE_KNOT.crossings} mobile=${E2EE_KNOT_MOBILE.crossings}`);
+const E2EE_D = `M 60 280 L 240 280 ${E2EE_KNOT.d.replace(/^M [\d.]+ [\d.]+/, "")} L 840 280`;
+const E2EE_D_MOBILE = `M 30 280 L 140 280 ${E2EE_KNOT_MOBILE.d.replace(/^M [\d.]+ [\d.]+/, "")} L 530 280`;
 
-// 03 Sky Auto Piano: 15 steps with taller accents at steps 3, 8, 12, then a zigzag arpeggio.
-const PIANO_ACCENTS = [2, 7, 11];
-const pianoSteps = stepsPath(60, 440, 40, 6, 35, PIANO_ACCENTS);
-const PIANO_D = `${pianoSteps.d} ${zigzagPath(pianoSteps.endX, pianoSteps.endY, 880, 5, 34, 46).replace(/^M [\d.]+ [\d.]+/, "")}`;
-const pianoStepsMobile = stepsPath(30, 440, 28, 5, 30, PIANO_ACCENTS);
-const PIANO_D_MOBILE = `${pianoStepsMobile.d} ${zigzagPath(pianoStepsMobile.endX, pianoStepsMobile.endY, 540, 3, 28, 40).replace(/^M [\d.]+ [\d.]+/, "")}`;
-// Accent peaks: middle of the accent step top run. Dots fade in when the draw reaches them.
-const pianoDots = pianoSteps.peaks;
-const pianoDotsMobile = pianoStepsMobile.peaks;
+// 02 Sky Sheet Store: melody on a faint staff, then a big vinyl-record
+// spiral. Staff lines and record outlines are dim background guides,
+// not the thread; the red thread draws the melody, the spiral, the exit.
+const SHEET_STAFF_Y = [190, 235, 280, 325, 370];
+const SHEET_STAFF_D = SHEET_STAFF_Y.map((y) => `M 60 ${y} H 860`).join(" ");
+const SHEET_MELODY = melodyPath([
+  { x: 60, y: 280 },
+  { x: 140, y: 235 },
+  { x: 205, y: 190, loop: true },
+  { x: 280, y: 280 },
+  { x: 355, y: 325, loop: true },
+  { x: 430, y: 235 },
+  { x: 500, y: 190, loop: true },
+  { x: 575, y: 280 },
+  { x: 650, y: 325, loop: true },
+  { x: 725, y: 235 },
+  { x: 820, y: 280 },
+]);
+const SHEET_SPIRAL = spiralPath(1150, 280, 8, 195, 5).replace(/^M [\d.]+ [\d.]+/, "");
+const SHEET_D = `${SHEET_MELODY} C 950 250, 1050 310, 1158 280${SHEET_SPIRAL} L 1400 330`;
+
+// Mobile Sheet Store stacks the composition: staff on top, record below.
+const SHEET_STAFF_Y_MOBILE = [120, 150, 180, 210, 240];
+const SHEET_STAFF_D_MOBILE = SHEET_STAFF_Y_MOBILE.map((y) => `M 40 ${y} H 520`).join(" ");
+const SHEET_MELODY_MOBILE = melodyPath([
+  { x: 40, y: 180 },
+  { x: 110, y: 150 },
+  { x: 170, y: 120, loop: true },
+  { x: 240, y: 180 },
+  { x: 310, y: 210, loop: true },
+  { x: 380, y: 150 },
+  { x: 450, y: 180, loop: true },
+  { x: 520, y: 180 },
+]);
+const SHEET_SPIRAL_MOBILE = spiralPath(280, 410, 8, 105, 4).replace(/^M [\d.]+ [\d.]+/, "");
+const SHEET_D_MOBILE = `${SHEET_MELODY_MOBILE} C 520 260, 420 340, 288 410${SHEET_SPIRAL_MOBILE} L 520 470`;
+
+// 03 Sky Auto Piano: keyboard, then tall bouncing steps that dip down to
+// press three keys, then a large arpeggio zigzag to the top-right corner.
+const PIANO_KEYS = keyboardPath(60, 840, 430, 520, 12);
+const PIANO_STEPS =
+  "L 60 300 L 160 300 L 160 430 L 160 210 L 260 210 L 260 430 L 260 120 L 360 120 L 360 430 L 360 60";
+const PIANO_ARP = "L 430 150 L 500 60 L 570 150 L 640 60 L 710 150 L 780 60 L 850 150 L 880 70";
+const PIANO_D = `${PIANO_KEYS} ${PIANO_STEPS} ${PIANO_ARP}`;
+const PIANO_DOTS = [
+  { cx: 160, cy: 430 },
+  { cx: 260, cy: 430 },
+  { cx: 360, cy: 430 },
+];
+
+const PIANO_KEYS_MOBILE = keyboardPath(30, 530, 430, 520, 10);
+const PIANO_STEPS_MOBILE =
+  "L 30 300 L 110 300 L 110 430 L 110 210 L 190 210 L 190 430 L 190 120 L 270 120 L 270 430 L 270 60";
+const PIANO_ARP_MOBILE = "L 330 150 L 390 60 L 450 150 L 510 60 L 540 110";
+const PIANO_D_MOBILE = `${PIANO_KEYS_MOBILE} ${PIANO_STEPS_MOBILE} ${PIANO_ARP_MOBILE}`;
+const PIANO_DOTS_MOBILE = [
+  { cx: 110, cy: 430 },
+  { cx: 190, cy: 430 },
+  { cx: 270, cy: 430 },
+];
 ---
 
 {project.slug === "fb-messenger-e2ee" && (
   <div class="project-thread-stage" data-project-thread-stage>
     <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="fb-messenger-e2ee" data-variant="desktop" viewBox="0 0 900 560" aria-hidden="true">
       <path class="project-thread-path" d={E2EE_D}></path>
-      <circle class="project-thread-node" data-thread-node="a" cx="60" cy="280" r="5"></circle>
-      <circle class="project-thread-node" data-thread-node="b" cx="840" cy="280" r="5"></circle>
+      <circle class="project-thread-node" data-thread-node="a" cx="60" cy="280" r="7"></circle>
+      <circle class="project-thread-node" data-thread-node="b" cx="840" cy="280" r="7"></circle>
+      <text class="project-thread-label" x="60" y="256" text-anchor="middle">A</text>
+      <text class="project-thread-label" x="840" y="256" text-anchor="middle">B</text>
     </svg>
     <svg class="project-thread-svg project-thread-svg--mobile" data-project-thread="fb-messenger-e2ee" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
       <path class="project-thread-path" d={E2EE_D_MOBILE}></path>
-      <circle class="project-thread-node" data-thread-node="a" cx="30" cy="280" r="5"></circle>
-      <circle class="project-thread-node" data-thread-node="b" cx="530" cy="280" r="5"></circle>
+      <circle class="project-thread-node" data-thread-node="a" cx="30" cy="280" r="7"></circle>
+      <circle class="project-thread-node" data-thread-node="b" cx="530" cy="280" r="7"></circle>
+      <text class="project-thread-label" x="30" y="256" text-anchor="middle">A</text>
+      <text class="project-thread-label" x="530" y="256" text-anchor="middle">B</text>
     </svg>
     <span class="visual-label visual-label--top">Signal Protocol / Key state</span>
-    <span class="visual-label visual-label--bottom">Noise transport / Encrypted flow</span>
+    <span class="visual-label visual-label--top-right">Noise transport / Encrypted flow</span>
+    <span class="phase-caption phase-caption--left">Plaintext</span>
+    <span class="phase-caption phase-caption--center">Encrypted</span>
+    <span class="phase-caption phase-caption--right">Decrypted</span>
   </div>
 )}
 
 {project.slug === "sky-sheet-store" && (
-  <div class="project-thread-stage" data-project-thread-stage>
+  <div class="project-thread-stage project-thread-stage--panoramic" data-project-thread-stage>
     <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="sky-sheet-store" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
+      <path class="project-thread-guide" d={SHEET_STAFF_D}></path>
+      <circle class="project-thread-guide" cx="1150" cy="280" r="225"></circle>
+      <circle class="project-thread-guide" cx="1150" cy="280" r="140"></circle>
+      <circle class="project-thread-guide-dot" cx="1150" cy="280" r="5"></circle>
       <path class="project-thread-path" d={SHEET_D}></path>
     </svg>
     <svg class="project-thread-svg project-thread-svg--mobile" data-project-thread="sky-sheet-store" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
+      <path class="project-thread-guide" d={SHEET_STAFF_D_MOBILE}></path>
+      <circle class="project-thread-guide" cx="280" cy="410" r="115"></circle>
+      <circle class="project-thread-guide" cx="280" cy="410" r="70"></circle>
+      <circle class="project-thread-guide-dot" cx="280" cy="410" r="4"></circle>
       <path class="project-thread-path" d={SHEET_D_MOBILE}></path>
     </svg>
     <span class="visual-label visual-label--top">02 / Live platform</span>
-    <span class="visual-label visual-label--bottom">Discovery · Sharing · Practice</span>
+    <span class="visual-label visual-label--top-right">Discovery · Sharing · Practice</span>
   </div>
 )}
 
@@ -135,34 +231,52 @@ const pianoDotsMobile = pianoStepsMobile.peaks;
   <div class="project-thread-stage" data-project-thread-stage>
     <svg class="project-thread-svg project-thread-svg--desktop" data-project-thread="sky-auto-piano" data-variant="desktop" viewBox="0 0 900 560" aria-hidden="true">
       <path class="project-thread-path" d={PIANO_D}></path>
-      {pianoDots.map((dot) => (
-        <circle class="project-thread-node" data-thread-dot cx={dot.cx} cy={dot.cy} r="4.5"></circle>
+      {PIANO_DOTS.map((dot) => (
+        <circle class="project-thread-node" data-thread-dot cx={dot.cx} cy={dot.cy} r="6"></circle>
       ))}
     </svg>
     <svg class="project-thread-svg project-thread-svg--mobile" data-project-thread="sky-auto-piano" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
       <path class="project-thread-path" d={PIANO_D_MOBILE}></path>
-      {pianoDotsMobile.map((dot) => (
-        <circle class="project-thread-node" data-thread-dot cx={dot.cx} cy={dot.cy} r="4.5"></circle>
+      {PIANO_DOTS_MOBILE.map((dot) => (
+        <circle class="project-thread-node" data-thread-dot cx={dot.cx} cy={dot.cy} r="6"></circle>
       ))}
     </svg>
-    <span class="visual-label visual-label--bottom">Desktop playback automation</span>
+    <span class="visual-label visual-label--top">Desktop playback automation</span>
   </div>
 )}
 
 <style>
-  .project-thread-stage { position: relative; min-height: clamp(24rem, 43vw, 39rem); overflow: hidden; border: 1px solid var(--border-subtle); background: #060608; }
+  /* The stage keeps the motif viewBox aspect, so the thread fills the stage
+     instead of floating in a tall letterboxed band. Panoramic keeps its own. */
+  .project-thread-stage { position: relative; aspect-ratio: 900 / 560; overflow: hidden; border: 1px solid var(--border-subtle); background: #060608; }
+  .project-thread-stage--panoramic { aspect-ratio: 1440 / 560; }
   .project-thread-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .project-thread-svg--mobile { display: none; }
   .project-thread-path { fill: none; stroke: var(--accent-red); stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .project-thread-node { fill: var(--accent-red); }
+  /* Dim background guides (staff lines, record outlines): not the thread. */
+  .project-thread-guide { fill: none; stroke: #ffffff; stroke-opacity: 0.16; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+  .project-thread-guide-dot { fill: #ffffff; fill-opacity: 0.22; }
+  .project-thread-label { fill: var(--text-muted); font-family: var(--font-mono); font-size: 15px; font-weight: 500; letter-spacing: 0.08em; }
   .visual-label { position: absolute; z-index: 2; color: var(--text-muted); font: 400 0.62rem/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
   .visual-label--top { top: 1.5rem; left: 1.5rem; }
+  .visual-label--top-right { top: 1.5rem; right: 1.5rem; }
   .visual-label--bottom { right: 1.5rem; bottom: 1.5rem; }
+  /* E2EE phase legend under the motif. */
+  .phase-caption { position: absolute; bottom: 0.75rem; z-index: 2; color: var(--text-muted); font: 400 0.62rem/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .phase-caption--left { left: 1.5rem; }
+  .phase-caption--center { left: 50%; transform: translateX(-50%); color: var(--accent-red); }
+  .phase-caption--right { right: 1.5rem; }
 
   @media (max-width: 700px) {
-    .project-thread-stage { min-height: 23rem; }
+    .project-thread-stage { aspect-ratio: 1 / 1; }
     .project-thread-svg--desktop { display: none; }
     .project-thread-svg--mobile { display: block; }
     .project-thread-path { stroke-width: 1.7px; }
+    .project-thread-label { font-size: 13px; }
+    /* The two top labels together are wider than a 354px stage, so they
+       collided (E2EE and Sheet Store). Keep only the left one on mobile;
+       the motif and the phase captions carry the story. */
+    .visual-label--top-right { display: none; }
   }
 </style>
