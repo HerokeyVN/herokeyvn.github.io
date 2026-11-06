@@ -21,8 +21,6 @@
   --text-muted: #95938c;
   --text-dim: #82807a;
 
-  --accent-cyan: #ff3c1a;
-  --accent-cyan-glow: rgba(255, 59, 18, 0.12);
   --accent-red: #ff3c1a;
   --accent-red-glow: rgba(255, 59, 18, 0.2);
   --accent-ember: #ff3b12;
@@ -85,12 +83,12 @@ body[data-menu-open] {
 }
 
 ::selection {
-  background: var(--accent-cyan);
+  background: var(--accent-red);
   color: #000000;
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent-cyan);
+  outline: 2px solid var(--accent-red);
   outline-offset: 4px;
 }
 
@@ -140,7 +138,7 @@ ol {
   left: 1rem;
   z-index: 1000;
   padding: 0.75rem 1.25rem;
-  background: var(--accent-cyan);
+  background: var(--accent-red);
   color: #000000;
   font-family: var(--font-mono);
   font-size: 0.75rem;
@@ -218,7 +216,7 @@ ol {
   width: auto;
   height: auto;
   font-size: 0.6875rem;
-  color: var(--accent-cyan);
+  color: var(--accent-red);
 }
 
 .site-nav {

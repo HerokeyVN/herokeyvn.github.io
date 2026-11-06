@@ -56,9 +56,9 @@ export function initMotion() {
       });
 
       gsap.utils.toArray<HTMLElement>("[data-project]").forEach((project) => {
-        const visual = project.querySelector<HTMLElement>("[data-project-visual]");
-        if (!visual) return;
-        gsap.from(visual, {
+        const stage = project.querySelector<HTMLElement>("[data-project-thread-stage]");
+        if (!stage) return;
+        gsap.from(stage, {
           autoAlpha: 0,
           scale: 0.97,
           y: 24,
