@@ -8,7 +8,9 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: "http://127.0.0.1:4322",
-    channel: process.env.CI ? undefined : "chrome",
+    // Bundled Chromium by default. Set PLAYWRIGHT_USE_CHROME=1 to run
+    // against installed Google Chrome instead.
+    channel: process.env.PLAYWRIGHT_USE_CHROME ? "chrome" : undefined,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
