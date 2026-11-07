@@ -160,6 +160,10 @@ test("keeps the site thread outside protected content", async ({ page }) => {
 });
 
 test("keeps each project motif inside its stage and off project content", async ({ page }) => {
+  // Round 10: the thread is split across two SVG overlays (thread-back
+  // behind foreground structures, thread-front in front of background
+  // ones), so every .project-thread-path in BOTH overlays of the active
+  // variant is sampled, not just the first path.
   await page.goto("/");
   await page.waitForFunction(() =>
     [...document.querySelectorAll<SVGPathElement>(".project-thread-path")]
@@ -173,10 +177,10 @@ test("keeps each project motif inside its stage and off project content", async 
     const outsideStage: { slug: string; x: number; y: number }[] = [];
     const contentHits: { slug: string; selector: string }[] = [];
     for (const stage of stages) {
-      const svg = stage.querySelector<SVGSVGElement>(`svg[data-variant="${variant}"]`);
-      const path = svg?.querySelector<SVGPathElement>(".project-thread-path");
+      const svgs = [...stage.querySelectorAll<SVGSVGElement>(`svg[data-variant="${variant}"]`)];
+      const paths = svgs.flatMap((svg) => [...svg.querySelectorAll<SVGPathElement>(".project-thread-path")]);
       const article = stage.closest<HTMLElement>("article[data-project]");
-      if (!svg || !path || !article) continue;
+      if (paths.length === 0 || !article) continue;
       const slug = article.id;
       const stageBox = stage.getBoundingClientRect();
       const contentBoxes = [...article.querySelectorAll<HTMLElement>(".project-name, .project-description, .tech-tag, a, button, .project-exhibit__content")].map(
@@ -191,18 +195,20 @@ test("keeps each project motif inside its stage and off project content", async 
           };
         },
       );
-      const length = path.getTotalLength();
-      for (let distance = 0; distance <= length; distance += 4) {
-        const point = path.getPointAtLength(distance);
-        const matrix = path.getScreenCTM();
-        const screen = matrix ? new DOMPoint(point.x, point.y).matrixTransform(matrix) : point;
-        const x = screen.x;
-        const y = screen.y + scrollY;
-        if (x < stageBox.left - 2 || x > stageBox.right + 2 || y < stageBox.top + scrollY - 2 || y > stageBox.bottom + scrollY + 2) {
-          outsideStage.push({ slug, x: Math.round(x), y: Math.round(y) });
+      for (const path of paths) {
+        const length = path.getTotalLength();
+        for (let distance = 0; distance <= length; distance += 4) {
+          const point = path.getPointAtLength(distance);
+          const matrix = path.getScreenCTM();
+          const screen = matrix ? new DOMPoint(point.x, point.y).matrixTransform(matrix) : point;
+          const x = screen.x;
+          const y = screen.y + scrollY;
+          if (x < stageBox.left - 2 || x > stageBox.right + 2 || y < stageBox.top + scrollY - 2 || y > stageBox.bottom + scrollY + 2) {
+            outsideStage.push({ slug, x: Math.round(x), y: Math.round(y) });
+          }
+          const hit = contentBoxes.find((box) => x > box.left && x < box.right && y > box.top && y < box.bottom);
+          if (hit) contentHits.push({ slug, selector: String(hit.selector) });
         }
-        const hit = contentBoxes.find((box) => x > box.left && x < box.right && y > box.top && y < box.bottom);
-        if (hit) contentHits.push({ slug, selector: String(hit.selector) });
       }
     }
     return { outsideStage: outsideStage.slice(0, 10), contentHits: contentHits.slice(0, 10) };
@@ -252,194 +258,222 @@ test("keeps each project motif's DOM scenes inside its stage", async ({ page }) 
   expect(result).toEqual([]);
 });
 
-test("project visuals reach their final storyboard state at full scrub", async ({ page }) => {
+test("project visuals render their complete static composition without scrolling", async ({ page }) => {
+  // Round 10: the scenes are static (no ScrollTrigger is wired yet - Phase
+  // 4 comes after Key approves the statics), so the final state must hold
+  // with NO scrolling at all. Every thread path is fully drawn, the lit
+  // states are authored in the markup, and every layer is visible.
+  // Reduced motion is emulated because the page-level stage entrance
+  // (motion.ts, autoAlpha 0 until the project scrolls into view) would
+  // otherwise hide the stages below the fold; reduced motion is exactly
+  // the static state this test asserts, and the motif itself has no
+  // scroll-driven transformation to hide behind.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await page.waitForLoadState("domcontentloaded");
   await page.evaluate(() => document.fonts.ready);
-  await page.addStyleTag({ content: "html{scroll-behavior:auto !important}" });
+  await page.waitForTimeout(1500);
 
-  const scrollToP = async (slug: string, p: number) => {
-    const { startY, endY } = await page.evaluate((s) => {
-      const a = document.getElementById(s)!;
-      const r = a.getBoundingClientRect();
-      const vh = window.innerHeight;
-      return {
-        startY: Math.round(r.top + scrollY - vh * 0.8),
-        endY: Math.round(r.bottom + scrollY - vh * 0.45),
-      };
-    }, slug);
-    await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), Math.round(startY + (endY - startY) * p));
-    await page.waitForTimeout(3000);
-  };
-
-  // E2EE mid: the Signal label is lit, Device B is still unreadable.
-  await scrollToP("fb-messenger-e2ee", 0.5);
-  const e2eeMid = await page.evaluate(() => {
-    const stage = document.querySelector('[data-project-slug="fb-messenger-e2ee"]')!;
-    const opacity = (name: string) => Number(getComputedStyle(stage.querySelector(`[data-el="${name}"]`)!).opacity);
-    return { signal: opacity("e2ee-signal-label"), bubbleB: opacity("e2ee-bubble-b") };
-  });
-  expect(e2eeMid.signal).toBeGreaterThan(0.8);
-  expect(e2eeMid.bubbleB).toBe(0);
-
-  // E2EE final: Device B readable, final caption shown. Scroll 5% past the
-  // trigger end (not 1%): each project article carries a motion entrance
-  // tween (y: 22, data-reveal) that settles after the thread ScrollTrigger
-  // measured its positions, so the trigger's cached end sits ~22px low and
-  // p would otherwise stop at ~0.99 on mobile. The extra margin reaches
-  // true p = 1; it does not loosen the assertions below.
-  await scrollToP("fb-messenger-e2ee", 1.05);
-  const e2eeFinal = await page.evaluate(() => {
-    const stage = document.querySelector('[data-project-slug="fb-messenger-e2ee"]')!;
-    const opacity = (name: string) => Number(getComputedStyle(stage.querySelector(`[data-el="${name}"]`)!).opacity);
-    return { bubbleB: opacity("e2ee-bubble-b"), caption: opacity("e2ee-final-caption") };
-  });
-  expect(e2eeFinal.bubbleB).toBe(1);
-  expect(e2eeFinal.caption).toBe(1);
-
-  // Sheet Store final: practice view visible, last key (14) highlighted,
-  // last timeline dot lit.
-  await scrollToP("sky-sheet-store", 1.05);
-  const sheetFinal = await page.evaluate(() => {
-    const stage = document.querySelector('[data-project-slug="sky-sheet-store"]')!;
-    // Two SVGs carry dots (desktop + mobile); only the active variant's
-    // dots are driven, so check the visible one - `some` is exact here
-    // because the hidden variant's dots are never lit.
-    const dot7Lit = [...stage.querySelectorAll('[data-note="7"]')].some((dot) =>
-      dot.classList.contains("is-lit"),
-    );
+  const state = await page.evaluate(() => {
+    const isMobile = window.innerWidth <= 700;
+    const variant = isMobile ? "mobile" : "desktop";
+    const out: Record<string, { paths: number; notDrawn: number; layers: { layer: string; visible: boolean }[] }> = {};
+    for (const stage of [...document.querySelectorAll<HTMLElement>("[data-project-thread-stage]")]) {
+      const slug = stage.dataset.projectSlug!;
+      const svgs = [...stage.querySelectorAll<SVGSVGElement>(`svg[data-variant="${variant}"]`)];
+      const paths = svgs.flatMap((svg) => [...svg.querySelectorAll<SVGPathElement>(".project-thread-path")]);
+      const notDrawn = paths.filter((p) => {
+        const cs = getComputedStyle(p);
+        return cs.strokeDasharray !== "none" || cs.visibility !== "visible";
+      }).length;
+      // Only the active variant's layers: the inactive variant's SVGs are
+      // display:none (zero rect) by design, not missing layers.
+      const layers = [...stage.querySelectorAll<HTMLElement>("[data-layer]")]
+        .filter((el) => getComputedStyle(el).display !== "none")
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return { layer: el.dataset.layer ?? "", visible: r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden" };
+        });
+      out[slug] = { paths: paths.length, notDrawn, layers };
+    }
+    const sheet = document.querySelector('[data-project-slug="sky-sheet-store"]')!;
+    const piano = document.querySelector('[data-project-slug="sky-auto-piano"]')!;
+    const e2ee = document.querySelector('[data-project-slug="fb-messenger-e2ee"]')!;
+    // The E2EE seal coil is marked data-el="e2ee-seal" in the markup
+    // (desktop Lissajous ~600 viewBox units, mobile S-coil ~200); its
+    // length is in viewBox units, > 100 on both variants.
+    const coil = e2ee.querySelector<SVGPathElement>('[data-el="e2ee-seal"]');
     return {
-      practice: Number(getComputedStyle(stage.querySelector('[data-scene="sheet-practice"]')!).opacity),
-      key14: stage.querySelector('[data-key="14"]')!.classList.contains("is-lit"),
-      dot7: dot7Lit,
+      stages: out,
+      key14Lit: sheet.querySelector('[data-key="14"]')!.classList.contains("is-lit"),
+      hLit: piano.querySelector('[data-pkey="H"]')!.classList.contains("is-lit"),
+      hPressed: piano.querySelector('[data-pkey="H"]')!.classList.contains("is-pressed"),
+      lLit: piano.querySelector('[data-pkey="L"]')!.classList.contains("is-lit"),
+      lHeld: piano.querySelector('[data-pkey="L"]')!.classList.contains("is-held"),
+      coilLength: coil ? coil.getTotalLength() : 0,
     };
   });
-  expect(sheetFinal.practice).toBe(1);
-  expect(sheetFinal.key14).toBe(true);
-  expect(sheetFinal.dot7).toBe(true);
 
-  // Piano final: slider full, live time at the 12s total.
-  await scrollToP("sky-auto-piano", 1.05);
-  const pianoFinal = await page.evaluate(() => {
-    const stage = document.querySelector('[data-project-slug="sky-auto-piano"]')!;
-    return {
-      slider: (stage.querySelector('[data-el="piano-slider-fill"]') as HTMLElement).style.width,
-      time: stage.querySelector('[data-el="piano-live-time"]')!.textContent,
-    };
-  });
-  expect(pianoFinal.slider).toBe("100%");
-  expect(pianoFinal.time).toBe("0:12");
+  for (const slug of ["fb-messenger-e2ee", "sky-sheet-store", "sky-auto-piano"]) {
+    const s = state.stages[slug]!;
+    expect(s.paths).toBeGreaterThan(0);
+    expect(s.notDrawn).toBe(0);
+    for (const layer of s.layers) expect(layer.visible).toBe(true);
+  }
+  expect(state.key14Lit).toBe(true);
+  expect(state.hLit).toBe(true);
+  expect(state.hPressed).toBe(true);
+  expect(state.lLit).toBe(true);
+  expect(state.lHeld).toBe(true);
+  expect(state.coilLength as number).toBeGreaterThan(100);
 });
 
-test("project motif threads keep clear of in-stage text and end on their target", async ({ page }) => {
-  // Fix-round regression test (honest extension of the collision tests):
-  // the Sheet Store detail loop grazed the stat values and a practice dot
-  // sat on "2.96"; the Piano entry grazed the timeline label; the mobile
-  // detail arc ended beside Share Sheet instead of at Open Player.
+test("project motif threads enter and exit at the stage edges, land on their targets, and keep clear of in-stage text", async ({ page }) => {
+  // Round 10 (static, no scrolling): the thread enters at one stage edge
+  // and exits at the opposite edge, the Sheet Store melody starts on the
+  // first staff note and the descent lands on key 14, the Piano belt dips
+  // onto H and L, and the front thread keeps clear of in-stage text.
+  // Thresholds are from measured geometry (scripts/probe-round-10-geometry.mjs,
+  // desktop + mobile); tightest measured values are E2EE mobile NOISE 10.3px,
+  // Sheet Store desktop first stat row 8.2px, Piano mobile front-tier exit
+  // 10.9px below the tier (39px desktop) and mobile FIG label 9.2px.
+  // Deliberate exceptions (NOT asserted): the E2EE thread crosses the
+  // background HELLO letters (the word is the protected message); the Sheet
+  // Store back thread runs behind the opaque detail panel to the first
+  // note; the descent crosses the panel's second stat row and the right
+  // practice-grid column on its way down to key 14; the Piano belt crosses
+  // the whole mid tier (it is a belt, H and L are its dip points).
   await page.goto("/");
   await page.waitForLoadState("domcontentloaded");
   await page.evaluate(() => document.fonts.ready);
-  await page.addStyleTag({ content: "html{scroll-behavior:auto !important}" });
+  await page.waitForTimeout(1500);
 
-  const scrollToP = async (slug: string, p: number) => {
-    const { startY, endY } = await page.evaluate((s) => {
-      const a = document.getElementById(s)!;
-      const r = a.getBoundingClientRect();
-      const vh = window.innerHeight;
-      return {
-        startY: Math.round(r.top + scrollY - vh * 0.8),
-        endY: Math.round(r.bottom + scrollY - vh * 0.45),
-      };
-    }, slug);
-    await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), Math.round(startY + (endY - startY) * p));
-    await page.waitForTimeout(3000);
-  };
-
-  // Min screen-px distance from a thread path's samples to each box matched
-  // by `selector`, and how many samples fall inside the first box. The
-  // active variant is the SVG whose display is not none.
-  const pathClearance = (slug: string, thread: string, selector: string) =>
-    page.evaluate(
-      ({ s, t, sel }) => {
-        const stage = document.querySelector(`[data-project-slug="${s}"]`)!;
-        const svg = [...stage.querySelectorAll("svg.project-thread-svg")].find(
-          (el) => getComputedStyle(el).display !== "none",
-        )!;
-        const path = svg.querySelector<SVGPathElement>(`[data-thread="${t}"]`)!;
-        const boxes = [...stage.querySelectorAll(sel)].map((el) => {
-          const r = el.getBoundingClientRect();
-          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
-        });
-        const first = boxes[0]!;
+  const result = await page.evaluate(() => {
+    const isMobile = window.innerWidth <= 700;
+    const variant = isMobile ? "mobile" : "desktop";
+    const out: Record<string, unknown> = {};
+    const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+    const center = (r: { left: number; right: number; top: number; bottom: number }) => ({ x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 });
+    const minDistToBoxes = (pts: { x: number; y: number }[], boxes: { left: number; right: number; top: number; bottom: number }[]) => {
+      let min = Number.POSITIVE_INFINITY;
+      for (const p of pts) for (const b of boxes) {
+        const dx = Math.max(b.left - p.x, 0, p.x - b.right);
+        const dy = Math.max(b.top - p.y, 0, p.y - b.bottom);
+        min = Math.min(min, Math.hypot(dx, dy));
+      }
+      return min;
+    };
+    const boxes = (stage: Element, sel: string) => [...stage.querySelectorAll(sel)]
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0)
+      .map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom }));
+    const frontPathsOf = (stage: Element) => [...stage.querySelectorAll<SVGPathElement>(`svg[data-variant="${variant}"][data-layer="thread-front"] .project-thread-path`)];
+    const frontSamples = (stage: Element) => {
+      const pts: { x: number; y: number }[] = [];
+      for (const path of frontPathsOf(stage)) {
         const ctm = path.getScreenCTM()!;
-        const length = path.getTotalLength();
-        let min = Number.POSITIVE_INFINITY;
-        let inside = 0;
-        for (let d = 0; d <= length; d += 2) {
+        const len = path.getTotalLength();
+        for (let d = 0; d <= len; d += 2) {
           const pt = path.getPointAtLength(d);
           const sp = new DOMPoint(pt.x, pt.y).matrixTransform(ctm);
-          for (const b of boxes) {
-            const dx = Math.max(b.left - sp.x, 0, sp.x - b.right);
-            const dy = Math.max(b.top - sp.y, 0, sp.y - b.bottom);
-            min = Math.min(min, Math.hypot(dx, dy));
-          }
-          if (sp.x >= first.left && sp.x <= first.right && sp.y >= first.top && sp.y <= first.bottom) inside++;
+          pts.push({ x: sp.x, y: sp.y });
         }
-        return { min: Math.round(min * 10) / 10, inside };
-      },
-      { s: slug, t: thread, sel: selector },
-    );
-
-  // Sheet Store mid: the detail thread stays clear of every stat value,
-  // and the practice dots are hidden until the practice view fades in.
-  await scrollToP("sky-sheet-store", 0.5);
-  const sheetMid = await pathClearance("sky-sheet-store", "detail", ".sheet-stat__value");
-  expect(sheetMid.min).toBeGreaterThanOrEqual(20);
-  const dotsHidden = await page.evaluate(() => {
-    const stage = document.querySelector('[data-project-slug="sky-sheet-store"]')!;
-    const svg = [...stage.querySelectorAll("svg.project-thread-svg")].find(
-      (el) => getComputedStyle(el).display !== "none",
-    )!;
-    return [...svg.querySelectorAll("[data-note]")].every((dot) => getComputedStyle(dot).opacity === "0");
-  });
-  expect(dotsHidden).toBe(true);
-
-  // Piano mid: the entry thread stays clear of the timeline label and never
-  // crosses it.
-  await scrollToP("sky-auto-piano", 0.5);
-  const pianoMid = await pathClearance("sky-auto-piano", "entry", '[data-el="piano-timeline-label"]');
-  expect(pianoMid.min).toBeGreaterThanOrEqual(6);
-  expect(pianoMid.inside).toBe(0);
-
-  // Sheet Store final: the practice thread starts exactly on the first
-  // timeline note (no connector before the melody), and the detail thread
-  // ends inside the Open Player button.
-  await scrollToP("sky-sheet-store", 1.05);
-  const sheetFinal = await page.evaluate(() => {
-    const stage = document.querySelector('[data-project-slug="sky-sheet-store"]')!;
-    const svg = [...stage.querySelectorAll("svg.project-thread-svg")].find(
-      (el) => getComputedStyle(el).display !== "none",
-    )!;
-    const toScreen = (el: SVGGeometryElement, x: number, y: number) => {
-      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
-      return { x: p.x, y: p.y };
+      }
+      return pts;
     };
-    const practice = svg.querySelector<SVGPathElement>('[data-thread="practice"]')!;
-    const dot0 = svg.querySelector<SVGCircleElement>('[data-note="0"]')!;
-    const start = practice.getPointAtLength(0);
-    const startScreen = toScreen(practice, start.x, start.y);
-    const dotScreen = toScreen(dot0, Number(dot0.getAttribute("cx")), Number(dot0.getAttribute("cy")));
-    const startGap = Math.hypot(startScreen.x - dotScreen.x, startScreen.y - dotScreen.y);
-    const detail = svg.querySelector<SVGPathElement>('[data-thread="detail"]')!;
-    const end = detail.getPointAtLength(detail.getTotalLength());
-    const endScreen = toScreen(detail, end.x, end.y);
-    const op = stage.querySelector(".sheet-rail__primary")!.getBoundingClientRect();
-    const endInPlayer =
-      endScreen.x >= op.left && endScreen.x <= op.right && endScreen.y >= op.top && endScreen.y <= op.bottom;
-    return { startGap: Math.round(startGap * 10) / 10, endInPlayer };
+
+    for (const stage of [...document.querySelectorAll<HTMLElement>("[data-project-thread-stage]")]) {
+      const slug = stage.dataset.projectSlug!;
+      const stageBox = stage.getBoundingClientRect();
+      const frontPaths = frontPathsOf(stage);
+      const first = frontPaths[0]!;
+      const last = frontPaths[frontPaths.length - 1]!;
+      const f0 = first.getPointAtLength(0);
+      const l1 = last.getPointAtLength(last.getTotalLength());
+      const f = new DOMPoint(f0.x, f0.y).matrixTransform(first.getScreenCTM()!);
+      const l = new DOMPoint(l1.x, l1.y).matrixTransform(last.getScreenCTM()!);
+      // Entry/exit: left/right edges on desktop, top/bottom edges on mobile.
+      out[slug + ":entry"] = isMobile ? Math.round(f.y - stageBox.top) : Math.round(f.x - stageBox.left);
+      out[slug + ":exit"] = isMobile ? Math.round(stageBox.bottom - l.y) : Math.round(stageBox.right - l.x);
+      const pts = frontSamples(stage);
+      if (slug === "fb-messenger-e2ee") {
+        out["e2ee:labels"] = Math.round(minDistToBoxes(pts, boxes(stage, '[data-el="e2ee-fig"], [data-el="e2ee-signal-label"], [data-el="e2ee-noise-label"], [data-el="e2ee-relay-label"]')) * 10) / 10;
+        // Frames are near-opaque panels, so the back thread is genuinely
+        // occluded behind frames 2 and 4 (desktop) / frame 2 (mobile).
+        const frame = stage.querySelector(".e2ee-frame")!;
+        const bg = getComputedStyle(frame).backgroundColor;
+        out["e2ee:frameAlpha"] = Number(bg.match(/rgba?\([^,]+,[^,]+,[^,]+,?\s*([\d.]+)?\)/)?.[1] ?? 1);
+      }
+      if (slug === "sky-sheet-store") {
+        out["sheet:labels"] = Math.round(minDistToBoxes(pts, boxes(stage, ".sheet-card__title, [data-el='sheet-fig'], [data-el='sheet-trending-label'], [data-el='sheet-data-label'], [data-el='sheet-practice-note']")) * 10) / 10;
+        // First stat row only (292 / 3:51 / 684); the descent deliberately
+        // crosses the second row on its way down to key 14.
+        const firstRow = boxes(stage, ".sheet-stat__value").slice(0, 3);
+        out["sheet:stats1"] = Math.round(minDistToBoxes(pts, firstRow) * 10) / 10;
+        // Melody starts on the first VISIBLE staff note head.
+        const note0 = [...stage.querySelectorAll(".sheet-note-head")].find((el) => (el as SVGElement).getBoundingClientRect().width > 0)!;
+        const nb = note0.getBoundingClientRect();
+        const melody = frontPaths[1]!;
+        const m0 = melody.getPointAtLength(0);
+        const ms = new DOMPoint(m0.x, m0.y).matrixTransform(melody.getScreenCTM()!);
+        out["sheet:melodyStart"] = Math.round(dist(ms, center(nb)) * 10) / 10;
+        // Descent (second-to-last front path) ends on key 14.
+        const descent = frontPaths[frontPaths.length - 2]!;
+        const dEnd = descent.getPointAtLength(descent.getTotalLength());
+        const de = new DOMPoint(dEnd.x, dEnd.y).matrixTransform(descent.getScreenCTM()!);
+        const key14 = stage.querySelector('[data-key="14"]')!.getBoundingClientRect();
+        out["sheet:key14"] = Math.round(dist(de, center(key14)) * 10) / 10;
+      }
+      if (slug === "sky-auto-piano") {
+        out["piano:topTier"] = Math.round(minDistToBoxes(pts, boxes(stage, ".piano-tier--0 .piano-key")) * 10) / 10;
+        out["piano:frontTier"] = Math.round(minDistToBoxes(pts, boxes(stage, ".piano-tier--2 .piano-key")) * 10) / 10;
+        out["piano:labels"] = Math.round(minDistToBoxes(pts, boxes(stage, '[data-el="piano-fig"], [data-el="piano-mapping"], [data-el="piano-speed-label"], [data-el="piano-song-label"], [data-el="piano-lp-label"], .piano-plate .mono-caption')) * 10) / 10;
+        // The belt dips onto H and L: the front paths touch both key boxes,
+        // and the dip drops at least 20 viewBox units below the belt level.
+        const hBox = stage.querySelector('[data-pkey="H"]')!.getBoundingClientRect();
+        const lBox = stage.querySelector('[data-pkey="L"]')!.getBoundingClientRect();
+        const touches = (b: { left: number; right: number; top: number; bottom: number }) => pts.some((p) => p.x >= b.left && p.x <= b.right && p.y >= b.top && p.y <= b.bottom);
+        out["piano:dipH"] = touches(hBox);
+        out["piano:dipL"] = touches(lBox);
+        let maxLocalY = Number.NEGATIVE_INFINITY;
+        let entryLocalY = 0;
+        frontPaths.forEach((path, i) => {
+          const len = path.getTotalLength();
+          for (let d = 0; d <= len; d += 2) {
+            const y = path.getPointAtLength(d).y;
+            maxLocalY = Math.max(maxLocalY, y);
+            if (i === 0 && d === 0) entryLocalY = y;
+          }
+        });
+        out["piano:dipDepth"] = Math.round((maxLocalY - entryLocalY) * 10) / 10;
+      }
+    }
+    return out;
   });
-  expect(sheetFinal.startGap).toBeLessThanOrEqual(2);
-  expect(sheetFinal.endInPlayer).toBe(true);
+
+  // Thread enters at one stage edge and exits at the opposite edge.
+  for (const slug of ["fb-messenger-e2ee", "sky-sheet-store", "sky-auto-piano"]) {
+    expect(result[slug + ":entry"] as number).toBeLessThanOrEqual(4);
+    expect(result[slug + ":exit"] as number).toBeLessThanOrEqual(4);
+  }
+  expect(result["e2ee:labels"] as number).toBeGreaterThanOrEqual(6);
+  expect(result["e2ee:frameAlpha"] as number).toBeGreaterThanOrEqual(0.9);
+  expect(result["sheet:labels"] as number).toBeGreaterThanOrEqual(6);
+  expect(result["sheet:stats1"] as number).toBeGreaterThanOrEqual(6);
+  expect(result["sheet:melodyStart"] as number).toBeLessThanOrEqual(2);
+  expect(result["sheet:key14"] as number).toBeLessThanOrEqual(2);
+  expect(result["piano:topTier"] as number).toBeGreaterThanOrEqual(10);
+  // Front tier: the belt's exit emerges from behind the front tier, so the
+  // closest front-thread approach is the exit line ~11px below the tier on
+  // mobile (39px desktop) - clear of it, not crossing it.
+  expect(result["piano:frontTier"] as number).toBeGreaterThanOrEqual(8);
+  // Labels: tightest measured is the mobile FIG label, 9.2px from the
+  // thread entry (the entry runs at x 30, the label starts at x 45) -
+  // the 6px safety margin used elsewhere in this suite.
+  expect(result["piano:labels"] as number).toBeGreaterThanOrEqual(6);
+  expect(result["piano:dipH"]).toBe(true);
+  expect(result["piano:dipL"]).toBe(true);
+  expect(result["piano:dipDepth"] as number).toBeGreaterThanOrEqual(20);
 });
 
 test("builds a continuous thread system around every outlined glyph", async ({ page }) => {
