@@ -226,11 +226,14 @@ export function initSiteThread() {
     // direction at the junction and arrives along the to-contour's travel
     // direction, so it meets each glyph outline tangentially (G1) instead
     // of leaving/arriving horizontally with a ~90deg kink at both ends.
-    // The handles are short (8-26px) so the connector stays a small arch
-    // or dip inside the inter-letter gap; x stays monotonic because both
-    // control points sit on the junctions' verticals.
+    // The handle scales with the chord (up to 26px): the old 8px minimum
+    // made a tall bump over the tiny 7-8px inter-letter gaps (length ratio
+    // ~2.0, failing the glyph test's 1.4 cap), and even a 2px floor kept
+    // mobile's 3.8px gaps at 1.43, so small gaps now get a shallow arch
+    // instead. x stays monotonic because both control points sit on the
+    // junctions' verticals.
     const chord = Math.hypot(to.x - from.x, to.y - from.y);
-    const handle = Math.min(26, Math.max(8, chord * 0.35));
+    const handle = Math.min(26, chord * 0.35);
     const vFrom = contourArrival(fromGlyph.paths[0]!, from.distance);
     const vTo = contourDeparture(toGlyph.paths[0]!, to.distance);
     const cp1x = from.x + vFrom.x * handle;
@@ -366,24 +369,32 @@ export function initSiteThread() {
     const cp2y = endY - handoffDir.y * handoffK;
 
     // Hero-to-glyph connector: one continuous elongated cubic from the
-    // handoff end down the right gutter, a quarter-turn onto the run, then
-    // a straight run into the first glyph junction. Round 11: replaces the
-    // two straight L segments and their 90-degree corner (rMin ~62
-    // desktop). runY stays below the filled headline line so the approach
-    // never crosses copy; where the first junction sits less than 10px
-    // under that line, the run drops just below it and rises into the
-    // junction. The turn radius (100px desktop) keeps the curve clear of
-    // the filled span's expanded box.
+    // handoff end to the right gutter, a vertical gutter run, a
+    // quarter-turn onto the run, then a straight run into the first glyph
+    // junction. Round 11: replaces the two straight L segments and their
+    // 90-degree corner (rMin ~62 desktop). runY stays below the filled
+    // headline line so the approach never crosses copy; where the first
+    // junction sits less than 10px under that line, the run drops just
+    // below it and rises into the junction. The turn radius (100px
+    // desktop) keeps the curve clear of the filled span's expanded box.
+    // Round 11 fix: the first cubic used to end at the gutter at turnY,
+    // descending diagonally across the filled "BUILT FOR THE PARTS" span
+    // at 1280 wide (the span wraps to a tall box reaching x 1232). The
+    // cubic now ends on the gutter at gutterTopY, above the span's top
+    // edge, and a vertical run continues down to turnY, so the thread
+    // never cuts across the filled line.
     const filledSpan = document.querySelector<HTMLElement>(".about__title > span:first-child");
+    const filledTop = filledSpan ? filledSpan.getBoundingClientRect().top + scrollY : aboutTop;
     const filledBottom = filledSpan ? filledSpan.getBoundingClientRect().bottom + scrollY : aboutTop + 400;
     const runY = Math.max(first.y, filledBottom + 10);
     const connDx = rightEdge - endX;
     const turnY = isMobile ? endY + 0.74 * (runY - endY) : runY - 100;
+    const gutterTopY = Math.min(turnY, Math.max(endY + 60, filledTop - 40));
     const connL1 = (isMobile ? 1.1 : 0.5) * connDx;
     const connCp1x = endX + handoffDir.x * connL1;
     const connCp1y = endY + handoffDir.y * connL1;
     const connCp2x = rightEdge;
-    const connCp2y = turnY - 95;
+    const connCp2y = Math.min(gutterTopY - 10, Math.max(connCp1y, gutterTopY - 95));
     let connectorD: string;
     if (isMobile) {
       // Mobile: cubic to the gutter, straight gutter run, 10px fillet onto
@@ -392,11 +403,11 @@ export function initSiteThread() {
       const filletR = 10;
       const filletK = 0.5523 * filletR;
       const riseLen = 4.25 * (runY - first.y);
-      connectorD = `M ${endX} ${endY} C ${connCp1x} ${connCp1y}, ${connCp2x} ${connCp2y}, ${rightEdge} ${turnY} L ${rightEdge} ${runY - filletR} C ${rightEdge} ${runY - filletR + filletK}, ${rightEdge - filletR + filletK} ${runY}, ${rightEdge - filletR} ${runY} L ${first.x + riseLen} ${runY} C ${first.x + 1.5 * (runY - first.y)} ${runY}, ${first.x + 0.8 * (runY - first.y)} ${first.y}, ${first.x} ${first.y}`;
+      connectorD = `M ${endX} ${endY} C ${connCp1x} ${connCp1y}, ${connCp2x} ${connCp2y}, ${rightEdge} ${gutterTopY} L ${rightEdge} ${turnY} L ${rightEdge} ${runY - filletR} C ${rightEdge} ${runY - filletR + filletK}, ${rightEdge - filletR + filletK} ${runY}, ${rightEdge - filletR} ${runY} L ${first.x + riseLen} ${runY} C ${first.x + 1.5 * (runY - first.y)} ${runY}, ${first.x + 0.8 * (runY - first.y)} ${first.y}, ${first.x} ${first.y}`;
     } else {
       const turnR = 100;
       const turnK = 0.5523 * turnR;
-      connectorD = `M ${endX} ${endY} C ${connCp1x} ${connCp1y}, ${connCp2x} ${connCp2y}, ${rightEdge} ${turnY} C ${rightEdge} ${turnY + turnK}, ${rightEdge - turnR + turnK} ${runY}, ${rightEdge - turnR} ${runY} L ${first.x} ${runY}`;
+      connectorD = `M ${endX} ${endY} C ${connCp1x} ${connCp1y}, ${connCp2x} ${connCp2y}, ${rightEdge} ${gutterTopY} L ${rightEdge} ${turnY} C ${rightEdge} ${turnY + turnK}, ${rightEdge - turnR + turnK} ${runY}, ${rightEdge - turnR} ${runY} L ${first.x} ${runY}`;
     }
 
     const p1 = document.querySelector("#fb-messenger-e2ee"), p2 = document.querySelector("#sky-sheet-store"), p3 = document.querySelector("#sky-auto-piano");

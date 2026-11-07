@@ -90,9 +90,12 @@ const melodyPath = (notes: MelodyNote[]) => {
 };
 
 // ---------------------------------------------------------------- E2EE
-// Encrypted Transmission. Desktop 900x560: a corridor of 4 receding frames;
-// giant "HELLO" fragmented behind it (readable -> protected -> readable);
-// the sealed core (3 glass plates) at centre-right; the filament enters
+// Encrypted Transmission. Desktop 900x560: a corridor of 4 receding frames
+// (heights narrow monotonically toward the core, each with extruded
+// thickness); giant "HELLO" behind it in solid -> outlined -> solid
+// letterforms (readable -> protected -> readable); the sealed core (3
+// glass plates of distinct materials) at centre-right carries the readable
+// message itself, ringed by the red Lissajous seal; the filament enters
 // left, coils once inside the core, exits right. Frames 1 and 3 sit in the
 // mid layer (thread passes in front of them); frames 2 and 4 sit in the
 // foreground layer (thread passes behind them). Mobile 560x560: vertical
@@ -131,6 +134,16 @@ const E2EE_FRONT_D_MOBILE = [
 // strip anchors the bottom with the 15-key grid (key 14 lit). The staff
 // note heads use the round-9 original 8-note phrase, keys [0,2,4,7,9,11,
 // 12,14], mapped to staff height on the right half of the stage.
+// Round 11 refinement: fan cards and detail panel are 54% tall so their
+// bodies fit (the featured card's stats row used to clip at its bottom
+// edge); the staff band (y 352-396) sits in the clear gap below the panels
+// (bottom 336) and above the practice strip, so all 8 note heads are
+// visible; the descent drops in that same gap, clear of the panel's stats
+// and Open Player, and the speed label moved left of the grid so the
+// descent clears it too. The featured card is the unmistakable focal
+// point: red selection outline, drop shadow, full size, while the back
+// cards recede (scale 0.97 / 0.94, deeper fog). Cards and panel carry a
+// stepped extruded edge for surface thickness; the final note head is red.
 type SheetCard = {
   title: string; artist: string; transcribedBy?: string; uploadedBy: string;
   difficulty: "Hard" | "Insane"; tags: string[];
@@ -164,11 +177,14 @@ const SHEET_STATS = [
   { value: "89", label: "Chord Count" },
 ];
 const SHEET_PHRASE_KEYS = [0, 2, 4, 7, 9, 11, 12, 14];
-// Staff notes, desktop (1440x560): x from 56% to 94%, y from 74% (key 0)
-// to 60% (key 14).
+// Staff notes, desktop (1440x560): x from 56% to 94%, y from 396 (key 0,
+// bottom staff line) to 352 (key 14, top staff line). Round 11 refinement:
+// the staff band (y 352-396) sits in the clear gap below the fan/detail
+// bottoms (336) and above the practice strip (437), so every note head is
+// visible instead of hiding behind the detail panel.
 const SHEET_NOTES: MelodyNote[] = SHEET_PHRASE_KEYS.map((key, i) => ({
   x: r1(806 + (i / 7) * 547),
-  y: r1(414 - (key / 14) * 78),
+  y: r1(396 - (key / 14) * 44),
 }));
 const SHEET_MELODY = melodyPath(SHEET_NOTES);
 // Staff notes, mobile (560x560): one row above the practice grid,
@@ -182,9 +198,18 @@ const SHEET_MELODY_MOBILE = melodyPath(SHEET_NOTES_MOBILE);
 // --------------------------------------------------------- Sky Auto Piano
 // Kinetic Playback Machine. Three terraced tiers in perspective (back
 // YUIOP, mid HJKL;, front NM,./). Only the two verified mappings are shown
-// (1Key3 -> H, 1Key7 -> L): H pressed (translated down, red-lit), L held
-// (red-lit). The belt runs along the mid tier, dips onto H, passes under a
-// raised bridge bar, dips onto L, exits right.
+// (1Key3 -> H, 1Key7 -> L): H pressed (translated down, sunk dark red),
+// L held (bright red, glow ring, sustain bar below the key). The belt runs
+// along the mid tier, dips onto H, passes under a raised bridge bar, dips
+// onto L, exits right.
+// Round 11 workstream B refinement: keys are physical objects with a
+// top-light/inset-shadow front face and per-tier materials (back tier
+// darkest, front tier lightest); tiers carry a stepped extruded edge like
+// the E2EE frames; the giant key-letter field tells the story in
+// solid -> OUTLINED -> solid rows (the played HJKL; row is the outlined
+// one) and fades out toward the machine instead of hard-clipping behind
+// it. The meaningless hairline rules and faint background circle are
+// removed; the rails are a solid frame with rivets, not a barcode.
 const PIANO_KEYS = ["Y", "U", "I", "O", "P", "H", "J", "K", "L", ";", "N", "M", ",", ".", "/"];
 const PIANO_TIERS = [
   { row: 0, keys: ["Y", "U", "I", "O", "P"] },
@@ -213,7 +238,6 @@ const PIANO_FRONT_D_MOBILE = [
   <div class="project-thread-stage" data-project-thread-stage data-project-slug="fb-messenger-e2ee" aria-hidden="true">
     <div class="layer layer--bg" data-layer="bg">
       <span class="e2ee-word" aria-hidden="true"><span class="e2ee-letter e2ee-letter--read">H</span><span class="e2ee-letter e2ee-letter--read">E</span><span class="e2ee-letter e2ee-letter--frag e2ee-letter--frag-a">L</span><span class="e2ee-letter e2ee-letter--frag e2ee-letter--frag-b">L</span><span class="e2ee-letter e2ee-letter--read">O</span></span>
-      <span class="e2ee-dotgrid" aria-hidden="true"></span>
     </div>
 
     <div class="layer layer--mid" data-layer="mid">
@@ -237,6 +261,8 @@ const PIANO_FRONT_D_MOBILE = [
         <span class="e2ee-plate e2ee-plate--back"></span>
         <span class="e2ee-plate e2ee-plate--mid"></span>
         <span class="e2ee-plate e2ee-plate--front"></span>
+        <span class="e2ee-seal-ring" aria-hidden="true"></span>
+        <span class="e2ee-core-message" aria-hidden="true">HELLO</span>
       </div>
       <span class="e2ee-relay" data-el="e2ee-relay"></span>
     </div>
@@ -265,24 +291,23 @@ const PIANO_FRONT_D_MOBILE = [
       <span class="sheet-giant" aria-hidden="true">SHEETS</span>
       <svg class="sheet-bg-svg" viewBox="0 0 1440 560" aria-hidden="true">
         {[0, 1, 2, 3, 4].map((i) => (
-          <line class="sheet-staff-line" x1="58" y1={336 + i * 19.5} x2="1382" y2={336 + i * 19.5}></line>
+          <line class="sheet-staff-line" x1="780" y1={352 + i * 11} x2="1400" y2={352 + i * 11}></line>
         ))}
-        {SHEET_NOTES.map((note) => (
-          <ellipse class="sheet-note-head" cx={note.x} cy={note.y} rx="7" ry="5"></ellipse>
+        {SHEET_NOTES.map((note, i) => (
+          <ellipse class:list={["sheet-note-head", i === SHEET_NOTES.length - 1 ? "sheet-note-head--final" : ""]} cx={note.x} cy={note.y} rx="7" ry="5"></ellipse>
         ))}
       </svg>
       <svg class="sheet-bg-svg sheet-bg-svg--mobile" viewBox="0 0 560 560" aria-hidden="true">
         {[0, 1, 2, 3, 4].map((i) => (
           <line class="sheet-staff-line" x1="28" y1={350 + i * 7.5} x2="532" y2={350 + i * 7.5}></line>
         ))}
-        {SHEET_NOTES_MOBILE.map((note) => (
-          <ellipse class="sheet-note-head" cx={note.x} cy={note.y} rx="6" ry="4.5"></ellipse>
+        {SHEET_NOTES_MOBILE.map((note, i) => (
+          <ellipse class:list={["sheet-note-head", i === SHEET_NOTES_MOBILE.length - 1 ? "sheet-note-head--final" : ""]} cx={note.x} cy={note.y} rx="6" ry="4.5"></ellipse>
         ))}
       </svg>
     </div>
 
     <div class="layer layer--mid" data-layer="mid">
-      <span class="sheet-filament" aria-hidden="true"></span>
       <div class="sheet-fan" data-el="sheet-fan">
         {SHEET_CARDS.map((card, i) => (
           <article class:list={["sheet-card", `sheet-card--fan-${i}`, card.featured ? "sheet-card--featured" : ""]}>
@@ -317,7 +342,7 @@ const PIANO_FRONT_D_MOBILE = [
     </div>
 
     <svg class="project-thread-svg project-thread-svg--back project-thread-svg--desktop" data-layer="thread-back" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 1197 132 C 1161 180, 940 320, 900 360 C 872 388, 730 320, 730 370 C 730 394, 765 420, 806 414"></path>
+      <path class="project-thread-path" d="M 1192 104 C 1144 150, 1080 290, 960 340 C 864 380, 800 340, 760 372 C 730 396, 768 399, 806 396"></path>
     </svg>
     <svg class="project-thread-svg project-thread-svg--back project-thread-svg--mobile" data-layer="thread-back" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
       <path class="project-thread-path" d="M 185 300 C 185 345, 40 310, 40 355 C 40 368, 44 381, 56 380"></path>
@@ -359,10 +384,10 @@ const PIANO_FRONT_D_MOBILE = [
     </div>
 
     <svg class="project-thread-svg project-thread-svg--front project-thread-svg--desktop" data-layer="thread-front" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 0 185 L 878 185 C 1000 185, 1230 88, 1197 132"></path>
+      <path class="project-thread-path" d="M 0 68 L 878 68 C 1000 68, 1232 66, 1192 104"></path>
       <path class="project-thread-path" d={SHEET_MELODY}></path>
-      <path class="project-thread-path" d="M 1353 336 C 1390 330, 1370 390, 1370 420 C 1370 460, 1347 480, 1347 520"></path>
-      <path class="project-thread-path" d="M 1347 520 L 1440 520"></path>
+      <path class="project-thread-path" d="M 1353 352 C 1390 349, 1385 400, 1370 440 C 1358 472, 1347 490, 1347 522"></path>
+      <path class="project-thread-path" d="M 1347 522 L 1440 522"></path>
       <circle class="project-thread-dot project-thread-dot--end" cx="1436" cy="520" r="4"></circle>
     </svg>
     <svg class="project-thread-svg project-thread-svg--front project-thread-svg--mobile" data-layer="thread-front" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
@@ -384,16 +409,7 @@ const PIANO_FRONT_D_MOBILE = [
 {project.slug === "sky-auto-piano" && (
   <div class="project-thread-stage" data-project-thread-stage data-project-slug="sky-auto-piano" aria-hidden="true">
     <div class="layer layer--bg" data-layer="bg">
-      <span class="piano-giant" aria-hidden="true"><span>Y U I O P</span><span>H J K L ;</span><span>N M , . /</span></span>
-      <span class="piano-rule" style="top: 24%"></span>
-      <span class="piano-rule" style="top: 46%"></span>
-      <span class="piano-rule" style="top: 68%"></span>
-      <svg class="piano-bg-svg" viewBox="0 0 900 560" aria-hidden="true">
-        <circle class="piano-bg-circle" cx="640" cy="280" r="170"></circle>
-      </svg>
-      <svg class="piano-bg-svg piano-bg-svg--mobile" viewBox="0 0 560 560" aria-hidden="true">
-        <circle class="piano-bg-circle" cx="280" cy="280" r="150"></circle>
-      </svg>
+      <span class="piano-giant" aria-hidden="true"><span class="piano-giant__row piano-giant__row--solid">Y U I O P</span><span class="piano-giant__row piano-giant__row--outline">H J K L ;</span><span class="piano-giant__row piano-giant__row--dim">N M , . /</span></span>
     </div>
 
     <div class="layer layer--mid" data-layer="mid">
@@ -479,23 +495,38 @@ const PIANO_FRONT_D_MOBILE = [
   .mono-caption { position: absolute; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; font-size: 1.22cqw; line-height: 1.5; letter-spacing: 0.02em; }
 
   /* ---- E2EE: Encrypted Transmission ---- */
+  /* Round 11 refinement: the giant word now tells readable -> protected
+     -> readable with solid vs OUTLINED letterforms (all five letters stay
+     recognisable; the old clipped/rotated fragments vanished behind the
+     frames). The readable message lives inside the sealed core itself. */
   .e2ee-word { position: absolute; left: 4%; top: 30%; width: 92%; display: flex; justify-content: space-between; font-family: var(--font-display); font-weight: 800; font-size: 17cqw; line-height: 1; color: var(--text-primary); }
-  .e2ee-letter--read { opacity: 0.5; }
-  .e2ee-letter--frag { opacity: 0.28; }
-  .e2ee-letter--frag-a { clip-path: inset(8% 0 30% 0); transform: rotate(8deg); }
-  .e2ee-letter--frag-b { clip-path: inset(45% 15% 0 0); }
-  .e2ee-dotgrid { position: absolute; inset: 0; background-image: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1px); background-size: 28px 28px; }
-  .e2ee-frame { position: absolute; border: 1px solid rgba(239, 237, 230, 0.14); background: rgba(6, 6, 8, 0.92); border-radius: 4px; }
-  .e2ee-frame--1 { left: 2%; top: 26%; width: 17%; height: 48%; }
-  .e2ee-frame--2 { left: 24%; top: 20%; width: 15%; height: 60%; transform: perspective(1100px) rotateY(-8deg) scale(0.94); }
-  .e2ee-frame--3 { left: 46%; top: 26%; width: 15%; height: 48%; transform: perspective(1100px) rotateY(-8deg) scale(0.88); }
-  .e2ee-frame--4 { left: 64%; top: 20%; width: 15%; height: 60%; transform: perspective(1100px) rotateY(-8deg) scale(0.82); }
+  .e2ee-letter--read { opacity: 0.62; }
+  .e2ee-letter--frag { color: transparent; -webkit-text-stroke: 2px rgba(239, 237, 230, 0.55); }
+  .e2ee-letter--frag-a { opacity: 0.5; }
+  .e2ee-letter--frag-b { opacity: 0.65; }
+  /* Frames form one receding corridor: heights narrow monotonically toward
+     the core while every frame stays centred on the thread (y 50%), and a
+     stepped bottom-right shadow gives each frame visible extruded
+     thickness instead of a flat outline. */
+  .e2ee-frame { position: absolute; border: 1px solid rgba(239, 237, 230, 0.14); background: rgba(6, 6, 8, 0.92); border-radius: 4px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 10px 12px 0 -4px #050506, 10px 12px 0 -3px rgba(239, 237, 230, 0.1); }
+  .e2ee-frame--1 { left: 2%; top: 22%; width: 17%; height: 56%; transform: perspective(1100px) rotateY(-8deg); }
+  .e2ee-frame--2 { left: 24%; top: 26%; width: 15%; height: 48%; transform: perspective(1100px) rotateY(-8deg); }
+  .e2ee-frame--3 { left: 46%; top: 30%; width: 15%; height: 40%; transform: perspective(1100px) rotateY(-8deg); }
+  .e2ee-frame--4 { left: 64%; top: 34%; width: 15%; height: 32%; transform: perspective(1100px) rotateY(-8deg); }
   .e2ee-filament { position: absolute; left: 4%; width: 92%; height: 1px; background: rgba(255, 255, 255, 0.18); }
   .e2ee-core { position: absolute; left: 76%; top: 30%; width: 18%; height: 40%; }
-  .e2ee-plate { position: absolute; inset: 0; background: rgba(18, 18, 21, 0.7); border: 1px solid rgba(239, 237, 230, 0.14); border-radius: 6px; }
-  .e2ee-plate--mid { transform: translate(4%, 6%); background: rgba(18, 18, 21, 0.55); }
-  .e2ee-plate--front { transform: translate(8%, 12%); border-color: var(--border-highlight); }
-  .e2ee-relay { position: absolute; left: 52%; top: 82%; width: 12%; height: 10%; border: 1px solid rgba(239, 237, 230, 0.2); border-radius: 4px; background: repeating-linear-gradient(0deg, transparent 0 8px, rgba(239, 237, 230, 0.18) 8px 9px); }
+  /* Plates are three distinct materials: matte back, mid-tone middle,
+     front glass with a top-light gradient and a drop shadow that lifts it
+     off the stack. The sealed message sits on the front plate with the
+     red seal ring and the Lissajous coil (thread-front SVG) over it. */
+  .e2ee-plate { position: absolute; inset: 0; border: 1px solid rgba(239, 237, 230, 0.1); border-radius: 6px; }
+  .e2ee-plate--back { background: #0a0a0d; }
+  .e2ee-plate--mid { transform: translate(4%, 6%); background: rgba(20, 20, 24, 0.85); }
+  .e2ee-plate--front { transform: translate(8%, 12%); background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01) 55%); border-color: var(--border-highlight); box-shadow: 0 16px 28px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+  .e2ee-seal-ring { position: absolute; left: 50%; top: 50%; width: 34%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 1.5px solid rgba(255, 60, 26, 0.55); border-radius: 50%; }
+  .e2ee-core-message { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-family: var(--font-display); font-weight: 800; font-size: 3.4cqw; letter-spacing: 0.08em; line-height: 1; color: var(--text-primary); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); white-space: nowrap; }
+  .e2ee-relay { position: absolute; left: 52%; top: 82%; width: 12%; height: 10%; border: 1px solid rgba(239, 237, 230, 0.2); border-radius: 4px; background: #0a0a0d repeating-linear-gradient(0deg, transparent 0 10px, rgba(239, 237, 230, 0.22) 10px 11px); box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
+  .e2ee-relay::before { content: ""; position: absolute; right: 8%; top: 18%; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-red); }
 
   [data-el="e2ee-fig"] { left: 2%; top: 3%; }
   [data-el="e2ee-signal-label"] { left: 74%; top: 74%; width: 24%; }
@@ -506,30 +537,42 @@ const PIANO_FRONT_D_MOBILE = [
   /* Vertical spine: the horizontal giant word was hidden behind the fan
      and the detail panel, so SHEETS runs upright down the left gutter
      instead, where it is actually visible. */
-  .sheet-giant { position: absolute; left: 0.5%; top: 18%; height: 64%; writing-mode: vertical-rl; text-orientation: upright; font-family: var(--font-display); font-weight: 800; font-size: 3.5cqw; line-height: 1; letter-spacing: 0.15em; color: rgba(239, 237, 230, 0.03); -webkit-text-stroke: 1px rgba(239, 237, 230, 0.25); white-space: nowrap; }
+  .sheet-giant { position: absolute; left: 0.5%; top: 8%; height: 56%; writing-mode: vertical-rl; text-orientation: upright; font-family: var(--font-display); font-weight: 800; font-size: 3.2cqw; line-height: 1; letter-spacing: 0.15em; color: rgba(239, 237, 230, 0.05); -webkit-text-stroke: 1px rgba(239, 237, 230, 0.38); white-space: nowrap; }
   .sheet-bg-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .sheet-bg-svg--mobile { display: none; }
   .sheet-staff-line { stroke: rgba(255, 255, 255, 0.12); stroke-width: 1; }
   .sheet-note-head { fill: rgba(255, 255, 255, 0.35); transform-box: fill-box; transform-origin: center; transform: rotate(-15deg); }
-  .sheet-filament { position: absolute; left: 4%; top: 42%; width: 58%; height: 1px; background: rgba(255, 255, 255, 0.12); }
+  .sheet-note-head--final { fill: var(--accent-red); }
   .sheet-fan { position: absolute; inset: 0; }
   .sheet-deck { display: none; }
-  .sheet-card { position: absolute; display: flex; flex-direction: column; background: #ffffff; border-radius: 12px; border-radius: 0.83cqw; overflow: hidden; color: #111827; text-align: left; min-width: 0; width: 20%; height: 56%; }
-  .sheet-card--fan-0 { left: 41%; top: 6%; transform: rotate(-2deg); z-index: 3; }
-  .sheet-card--fan-1 { left: 23%; top: 13%; transform: rotate(1deg); z-index: 2; }
-  .sheet-card--fan-1::after, .sheet-card--fan-2::after { content: ""; position: absolute; inset: 0; background: rgba(6, 6, 8, 0.25); z-index: 1; pointer-events: none; }
-  .sheet-card--fan-2 { left: 5%; top: 20%; transform: rotate(-5deg); z-index: 1; }
-  .sheet-card--fan-2::after { background: rgba(6, 6, 8, 0.45); }
-  .sheet-card__cover { position: relative; flex: 0 0 52%; overflow: hidden; }
+  /* Cards are physical sheets, not flat UI rectangles: a stepped
+     extruded edge (dark slab + hairline) gives each one visible surface
+     thickness, and a soft drop shadow seats it on the deck. The featured
+     card is the focal point: full size, a red selection outline (the
+     thread rests on its tile), and the strongest shadow; the back cards
+     recede with a smaller scale and a deeper fog veil. */
+  .sheet-card { position: absolute; display: flex; flex-direction: column; background: #ffffff; border-radius: 12px; border-radius: 0.83cqw; overflow: hidden; color: #111827; text-align: left; min-width: 0; width: 20%; height: 54%; box-shadow: 10px 12px 0 -4px #050506, 10px 12px 0 -3px rgba(239, 237, 230, 0.1), 0 18px 36px rgba(0, 0, 0, 0.45); }
+  .sheet-card--fan-0 { left: 41%; top: 6%; transform: rotate(-2deg); z-index: 3; box-shadow: 0 0 0 2px rgba(255, 60, 26, 0.9), 10px 12px 0 -4px #050506, 10px 12px 0 -3px rgba(239, 237, 230, 0.1), 0 24px 48px rgba(0, 0, 0, 0.55); }
+  .sheet-card--fan-1 { left: 23%; top: 13%; transform: rotate(1deg) scale(0.97); transform-origin: 50% 100%; z-index: 2; }
+  .sheet-card--fan-1::after, .sheet-card--fan-2::after { content: ""; position: absolute; inset: 0; background: rgba(6, 6, 8, 0.3); z-index: 1; pointer-events: none; }
+  .sheet-card--fan-2 { left: 5%; top: 20%; transform: rotate(-5deg) scale(0.94); transform-origin: 50% 100%; z-index: 1; }
+  .sheet-card--fan-2::after { background: rgba(6, 6, 8, 0.5); }
+  .sheet-card--featured .sheet-card__title { font-size: 18px; font-size: 1.25cqw; }
+  .sheet-card__cover { position: relative; flex: 0 0 44%; overflow: hidden; }
   .sheet-card__cover--teal { background: linear-gradient(135deg, #14b8a6, #0d9488); }
   .sheet-card__cover--purple { background: linear-gradient(135deg, #a855f7, #7c3aed); }
   .sheet-card__cover--navy { background: linear-gradient(135deg, #1e293b, #0f172a); }
   .sheet-card__cover::after { content: ""; position: absolute; inset: 0; background-image: repeating-linear-gradient(0deg, transparent 0 16px, rgba(255, 255, 255, 0.13) 16px 17px), repeating-linear-gradient(90deg, transparent 0 16px, rgba(255, 255, 255, 0.06) 16px 17px); }
   .sheet-card__notes { position: absolute; left: 38%; top: 34%; color: #ffffff; opacity: 0.55; font-size: 34px; font-size: 2.36cqw; z-index: 1; }
   .sheet-card__notes--small { left: 12%; top: 62%; font-size: 18px; font-size: 1.25cqw; opacity: 0.35; }
+  /* The detail cover's notes sit low so the entry hairpin (which runs
+     flat at y~68 across the cover's top band, then hooks down to the play
+     button) clears them; the fan cards keep the default positions. */
+  .sheet-detail__cover .sheet-card__notes { left: 15%; top: 65%; }
+  .sheet-detail__cover .sheet-card__notes--small { left: 70%; top: 60%; }
   .sheet-card__badge { position: absolute; left: 10px; top: 10px; z-index: 1; background: rgba(17, 24, 39, 0.75); color: #fff; font-family: var(--font-mono); font-size: 10px; font-size: 0.69cqw; font-weight: 500; padding: 2px 7px; border-radius: 999px; }
   .sheet-card__duration { position: absolute; right: 10px; bottom: 10px; z-index: 1; background: rgba(17, 24, 39, 0.75); color: #fff; font-family: var(--font-mono); font-size: 10px; font-size: 0.69cqw; padding: 2px 7px; border-radius: 999px; }
-  .sheet-card__body { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px 12px; padding: 0.83cqw 0.97cqw; }
+  .sheet-card__body { flex: 1; display: flex; flex-direction: column; gap: 1px; padding: 10px 12px 10px; padding: 0.69cqw 0.83cqw; }
   .sheet-card__title { font-family: var(--font-sans); font-size: 16px; font-size: 1.11cqw; font-weight: 600; line-height: 1.25; }
   .sheet-card__line { font-size: 11px; font-size: 0.76cqw; line-height: 1.45; color: #4b5563; text-transform: uppercase; letter-spacing: 0.02em; }
   .sheet-card__line--muted { color: #6b7280; text-transform: none; }
@@ -543,13 +586,13 @@ const PIANO_FRONT_D_MOBILE = [
   .sheet-card__stats { display: flex; justify-content: space-between; margin-top: auto; padding-top: 6px; border-top: 1px solid #e5e7eb; font-size: 12px; font-size: 0.83cqw; color: #374151; }
   .sheet-card__free { color: #059669; font-weight: 600; }
 
-  .sheet-detail { position: absolute; left: 68%; top: 6%; width: 27%; height: 68%; transform: rotate(-2deg); display: flex; flex-direction: column; background: #0a0a0d; border: 1px solid var(--border-strong); border-radius: 12px; border-radius: 0.83cqw; overflow: hidden; }
-  .sheet-detail__cover { position: relative; flex: 0 0 42%; overflow: hidden; background: linear-gradient(135deg, #14b8a6, #0d9488); }
+  .sheet-detail { position: absolute; left: 68%; top: 6%; width: 27%; height: 54%; transform: rotate(-2deg); display: flex; flex-direction: column; background: #0a0a0d; border: 1px solid var(--border-strong); border-radius: 12px; border-radius: 0.83cqw; overflow: hidden; box-shadow: 12px 14px 0 -6px #050506, 12px 14px 0 -5px rgba(239, 237, 230, 0.12), 0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
+  .sheet-detail__cover { position: relative; flex: 0 0 38%; overflow: hidden; background: linear-gradient(135deg, #14b8a6, #0d9488); }
   .sheet-detail__cover::after { content: ""; position: absolute; inset: 0; background-image: repeating-linear-gradient(0deg, transparent 0 16px, rgba(255, 255, 255, 0.13) 16px 17px), repeating-linear-gradient(90deg, transparent 0 16px, rgba(255, 255, 255, 0.06) 16px 17px); }
-  .sheet-detail__play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; width: 56px; width: 3.89cqw; height: 56px; height: 3.89cqw; display: flex; align-items: center; justify-content: center; background: #ffffff; color: #2563eb; border-radius: 50%; font-size: 20px; font-size: 1.39cqw; }
-  .sheet-detail__info { flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; padding: 0.69cqw 0.83cqw; min-height: 0; }
+  .sheet-detail__play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; width: 48px; width: 3.33cqw; height: 48px; height: 3.33cqw; display: flex; align-items: center; justify-content: center; background: #ffffff; color: #2563eb; border-radius: 50%; font-size: 18px; font-size: 1.25cqw; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35); }
+  .sheet-detail__info { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; padding: 0.56cqw 0.83cqw; min-height: 0; }
   .sheet-detail__title { font-family: var(--font-display); font-size: 22px; font-size: 1.53cqw; font-weight: 800; line-height: 1.05; color: var(--text-primary); }
-  .sheet-detail__artist { font-family: var(--font-mono); font-size: 12px; font-size: 0.83cqw; line-height: 1.3; letter-spacing: 0.04em; color: var(--text-secondary); text-transform: uppercase; }
+  .sheet-detail__artist { font-family: var(--font-mono); font-size: 11px; font-size: 0.79cqw; line-height: 1.35; letter-spacing: 0.04em; color: var(--text-secondary); text-transform: uppercase; }
   .sheet-detail__pills { display: flex; gap: 6px; }
   .sheet-detail__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .sheet-stat { display: flex; flex-direction: column; gap: 1px; }
@@ -559,44 +602,83 @@ const PIANO_FRONT_D_MOBILE = [
 
   .sheet-practice { position: absolute; left: 4%; top: 78%; width: 92%; height: 18%; border-top: 1px solid rgba(255, 255, 255, 0.1); }
   .sheet-practice__header { position: absolute; left: 0; top: 10%; font-family: var(--font-mono); font-size: 13px; font-size: 0.9cqw; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-primary); }
-  .sheet-practice__speed { position: absolute; right: 0; top: 10%; font-family: var(--font-mono); font-size: 12px; font-size: 0.83cqw; color: var(--text-muted); }
+  .sheet-practice__speed { position: absolute; left: 17%; top: 10%; font-family: var(--font-mono); font-size: 12px; font-size: 0.83cqw; color: var(--text-muted); }
   [data-el="sheet-practice-note"] { left: 0; top: 34%; }
   .sheet-practice__grid { position: absolute; right: 0; top: 12%; width: 30%; height: 76%; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; gap: 0.42cqw; }
-  .sheet-key { display: flex; align-items: center; justify-content: center; background: #141416; border: 1px solid var(--border-strong); border-radius: 4px; border-radius: 0.28cqw; font-family: var(--font-mono); font-size: 13px; font-size: 0.9cqw; color: var(--text-muted); }
-  .sheet-key.is-lit { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
+  .sheet-key { display: flex; align-items: center; justify-content: center; background: #141416; border: 1px solid var(--border-strong); border-bottom: 2px solid #000000; border-radius: 4px; border-radius: 0.28cqw; font-family: var(--font-mono); font-size: 13px; font-size: 0.9cqw; color: var(--text-muted); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+  .sheet-key.is-lit { background: var(--accent-red); border-color: var(--accent-red); border-bottom-color: #7f1d0d; color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 8px rgba(255, 60, 26, 0.35); }
 
   [data-el="sheet-fig"] { left: 2%; top: 2%; }
   [data-el="sheet-trending-label"] { left: 41%; top: 3%; }
   [data-el="sheet-data-label"] { left: 2%; bottom: 2%; }
 
   /* ---- Piano: Kinetic Playback Machine ---- */
-  .piano-giant { position: absolute; left: 4%; top: 6%; width: 55%; display: flex; flex-direction: column; gap: 2cqw; font-family: var(--font-display); font-weight: 800; font-size: 10cqw; line-height: 1.05; letter-spacing: 0.02em; color: rgba(239, 237, 230, 0.06); white-space: nowrap; }
-  .piano-rule { position: absolute; left: 4%; width: 55%; height: 1px; background: rgba(255, 255, 255, 0.06); }
-  .piano-bg-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .piano-bg-svg--mobile { display: none; }
-  .piano-bg-circle { fill: none; stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
-  .piano-rail { position: absolute; top: 12%; width: 3%; height: 64%; border: 1px solid rgba(239, 237, 230, 0.1); background: repeating-linear-gradient(0deg, rgba(239, 237, 230, 0.14) 0 12%, transparent 12% 20%); }
+  /* Round 11 workstream B: the giant key-letter field tells solid ->
+     OUTLINED -> solid (the played HJKL; row is the outlined one, like
+     E2EE's solid -> outlined -> solid HELLO) and fades out toward the
+     machine with a right-edge mask instead of hard-clipping behind the
+     tiers. The hairline rules and the faint background circle are gone:
+     they crossed the letters and read as unrelated scribbles. */
+  .piano-giant { position: absolute; left: 4%; top: 5%; width: 55%; display: flex; flex-direction: column; gap: 2cqw; font-family: var(--font-display); font-weight: 800; font-size: 8.5cqw; line-height: 1.05; letter-spacing: 0.02em; white-space: nowrap; -webkit-mask-image: linear-gradient(90deg, #000 45%, transparent 88%); mask-image: linear-gradient(90deg, #000 45%, transparent 88%); }
+  .piano-giant__row--solid { color: rgba(239, 237, 230, 0.1); }
+  .piano-giant__row--outline { color: transparent; -webkit-text-stroke: 1.5px rgba(239, 237, 230, 0.34); }
+  .piano-giant__row--dim { color: rgba(239, 237, 230, 0.05); }
+  /* Rails are a solid machine frame with rivets, not a striped barcode:
+     one dark body, a hairline border, five rivet dots down each rail. */
+  .piano-rail { position: absolute; top: 12%; width: 3%; height: 64%; border: 1px solid rgba(239, 237, 230, 0.12); background-color: #0b0b0e; background-image: radial-gradient(circle at 50% 50%, rgba(239, 237, 230, 0.38) 1.5px, transparent 2.2px); background-size: 100% 20%; background-repeat: repeat-y; }
   .piano-rail--left { left: 2%; }
   .piano-rail--right { right: 2%; }
   .piano-gauge { position: absolute; left: 10%; top: 92%; width: 80%; height: 2px; background: rgba(255, 255, 255, 0.1); }
-  .piano-gauge__fill { display: block; height: 100%; width: 88%; background: var(--accent-red); }
+  .piano-gauge__fill { display: block; position: relative; height: 100%; width: 88%; background: var(--accent-red); }
+  /* Playhead dot at the fill's end: the gauge marks "now" (0:10 of 0:12),
+     not just a static bar. */
+  .piano-gauge__fill::after { content: ""; position: absolute; right: -4px; top: 50%; width: 8px; height: 8px; transform: translateY(-50%); border-radius: 50%; background: var(--accent-red); border: 2px solid #060608; }
   .piano-machine { position: absolute; left: 28%; top: 14%; width: 68%; height: 66%; }
-  .piano-tier { position: absolute; display: flex; gap: 6px; gap: 0.67cqw; box-shadow: 0 10px 0 rgba(0, 0, 0, 0.35); }
+  /* Tiers carry a stepped extruded edge (dark slab + hairline + drop
+     shadow), the same thickness language as the E2EE frames and the
+     Sheet Store cards, so each tier reads as a solid step of the
+     ziggurat instead of a flat floating rectangle. */
+  .piano-tier { position: absolute; display: flex; gap: 6px; gap: 0.67cqw; box-shadow: 0 12px 0 -3px #08080a, 0 12px 0 -2px rgba(239, 237, 230, 0.1), 0 24px 32px rgba(0, 0, 0, 0.5); }
   .piano-tier--0 { left: 8%; top: 0; width: 84%; height: 26%; transform: perspective(800px) rotateX(18deg) translateZ(-160px); }
   .piano-tier--1 { left: 4%; top: 34%; width: 92%; height: 30%; transform: perspective(800px) rotateX(18deg) translateZ(-80px); }
   .piano-tier--2 { left: 0; top: 70%; width: 100%; height: 30%; transform: perspective(800px) rotateX(18deg); }
-  .piano-key { flex: 1; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, #1c1c20, #0c0c0f); border: 1px solid rgba(239, 237, 230, 0.16); border-radius: 4px; border-radius: 0.44cqw; font-family: var(--font-mono); font-size: 13px; font-size: 1.44cqw; color: var(--text-secondary); }
+  /* Keys are physical objects: a lighter top face, a dark front face
+     (inset bottom shadow), and a top-light edge. Materials step with
+     depth - the back tier is darkest and dimmest, the front tier lightest
+     - so the ziggurat recedes instead of reading as three identical rows.
+     Inset shadows only, so no key's bounding box moves (the belt
+     clearances are measured against live key boxes). */
+  .piano-key { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, #1c1c20, #0c0c0f); border: 1px solid rgba(239, 237, 230, 0.16); border-radius: 4px; border-radius: 0.44cqw; font-family: var(--font-mono); font-size: 13px; font-size: 1.44cqw; color: var(--text-secondary); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -4px 0 rgba(0, 0, 0, 0.45); }
+  .piano-tier--0 .piano-key { background: linear-gradient(180deg, #151518, #09090b); color: rgba(239, 237, 230, 0.42); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -4px 0 rgba(0, 0, 0, 0.5); }
+  .piano-tier--2 .piano-key { background: linear-gradient(180deg, #26262b, #111114); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -5px 0 rgba(0, 0, 0, 0.5); }
+  /* H pressed reads SUNK: darker red, top shadow swallowing the key,
+     no glow. L held reads HELD: brighter red, a glow ring, and a short
+     sustain bar hanging below the key into the tier gap (the hold's
+     duration made visible). The two states are now unmistakably
+     different instead of two identical red blocks. */
   .piano-key.is-lit { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
-  .piano-key.is-pressed { transform: translateY(6px); }
-  .piano-bridge { position: absolute; left: 45.3%; top: 42.9%; width: 16%; height: 5%; background: #141416; border: 1px solid rgba(239, 237, 230, 0.2); border-top: 2px solid rgba(255, 255, 255, 0.25); border-radius: 2px; }
-  .piano-plate { position: absolute; left: 6%; top: 80%; width: 34%; height: 12%; transform: rotate(2deg); display: flex; align-items: center; padding: 0 12px; padding: 0 1.33cqw; background: rgba(18, 18, 21, 0.7); border: 1px solid rgba(239, 237, 230, 0.14); border-radius: 6px; }
+  .piano-key.is-pressed { transform: translateY(6px); background: linear-gradient(180deg, #b3250f, #8f1d0a); box-shadow: inset 0 6px 10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+  .piano-key.is-held { background: linear-gradient(180deg, #ff5a38, #e8320f); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 0 0 2px rgba(255, 60, 26, 0.35), 0 6px 20px rgba(255, 60, 26, 0.4); }
+  .piano-key.is-held::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -14px; height: 4px; background: var(--accent-red); border-radius: 2px; }
+  /* The bridge is a clamped metal bar over the belt, not a stray slab:
+     a top-light gradient, a dark underside, a drop shadow seating it on
+     the mid tier, and a red rivet at its centre. Its geometry is
+     unchanged, so the belt still passes under it (thread-back). */
+  .piano-bridge { position: absolute; left: 45.3%; top: 42.9%; width: 16%; height: 5%; background: linear-gradient(180deg, #232327, #101013); border: 1px solid rgba(239, 237, 230, 0.22); border-top: 2px solid rgba(255, 255, 255, 0.3); border-radius: 2px; box-shadow: 0 6px 12px rgba(0, 0, 0, 0.55), inset 0 -3px 0 rgba(0, 0, 0, 0.5); }
+  .piano-bridge::after { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; transform: translate(-50%, -50%); border-radius: 50%; background: var(--accent-red); }
+  /* The honesty plate gets the same stepped extruded edge as the other
+     scenes' focal structures, so it reads as a bolted-on machine plate. */
+  .piano-plate { position: absolute; left: 6%; top: 80%; width: 34%; height: 12%; transform: rotate(2deg); display: flex; align-items: center; padding: 0 12px; padding: 0 1.33cqw; background: rgba(18, 18, 21, 0.7); border: 1px solid rgba(239, 237, 230, 0.14); border-radius: 6px; box-shadow: 8px 10px 0 -4px #050506, 8px 10px 0 -3px rgba(239, 237, 230, 0.1), 0 14px 26px rgba(0, 0, 0, 0.5); }
   .piano-plate .mono-caption { position: static; font-size: 10px; font-size: 1.11cqw; line-height: 1.4; }
 
   [data-el="piano-fig"] { left: 2%; top: 3%; }
-  [data-el="piano-mapping"] { left: 60%; top: 10%; width: 22%; text-align: right; }
+  [data-el="piano-mapping"] { left: 60%; top: 10%; width: 22%; text-align: right; color: var(--text-secondary); }
   [data-el="piano-speed-label"] { left: 84%; top: 10%; width: 14%; text-align: right; }
   [data-el="piano-lp-label"] { left: 10%; top: 95.5%; }
-  [data-el="piano-song-label"] { left: 44%; top: 88.5%; }
+  /* The footer is one left-aligned rail now: song position above the
+     gauge, long-press state below it (was centred at 44%, floating
+     between the two). */
+  [data-el="piano-song-label"] { left: 10%; top: 88.5%; }
 
   @media (max-width: 700px) {
     .project-thread-stage { aspect-ratio: 1 / 1; }
@@ -624,10 +706,9 @@ const PIANO_FRONT_D_MOBILE = [
     /* Sheet Store mobile: vertical cascade. Only the featured card shows,
        with two deck tabs peeking behind it; detail becomes a horizontal
        strip; the practice grid anchors the bottom. */
-    .sheet-giant { left: 0.5%; top: 16%; font-size: 3.2cqw; }
+    .sheet-giant { left: 0.5%; top: 16%; height: 40%; font-size: 3.2cqw; }
     .sheet-bg-svg { display: none; }
     .sheet-bg-svg--mobile { display: block; }
-    .sheet-filament { display: none; }
     .sheet-fan { z-index: 1; }
     .sheet-card--fan-0 { left: 5%; top: 6%; width: 90%; height: 24%; transform: none; flex-direction: row; }
     .sheet-card--fan-0 .sheet-card__cover { flex: 0 0 42%; }
@@ -667,10 +748,7 @@ const PIANO_FRONT_D_MOBILE = [
     /* Piano mobile: tiers stack vertically with reduced perspective; the
        belt descends the left edge, crosses the mid tier, and exits down
        the right edge behind the front tier. */
-    .piano-giant { left: 5%; top: 2%; width: 90%; font-size: 9cqw; }
-    .piano-rule { display: none; }
-    .piano-bg-svg { display: none; }
-    .piano-bg-svg--mobile { display: block; }
+    .piano-giant { left: 5%; top: 2%; width: 90%; font-size: 8cqw; }
     .piano-rail--left { display: none; }
     .piano-rail--right { right: 2%; top: 6%; height: 50%; }
     .piano-gauge { left: 5%; top: 66%; width: 90%; }
