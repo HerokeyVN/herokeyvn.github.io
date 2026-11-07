@@ -509,10 +509,10 @@ const PIANO_FRONT_D_MOBILE = [
      stepped bottom-right shadow gives each frame visible extruded
      thickness instead of a flat outline. */
   .e2ee-frame { position: absolute; border: 1px solid rgba(239, 237, 230, 0.14); background: rgba(6, 6, 8, 0.92); border-radius: 4px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 10px 12px 0 -4px #050506, 10px 12px 0 -3px rgba(239, 237, 230, 0.1); }
-  .e2ee-frame--1 { left: 2%; top: 22%; width: 17%; height: 56%; transform: perspective(1100px) rotateY(-8deg); }
-  .e2ee-frame--2 { left: 24%; top: 26%; width: 15%; height: 48%; transform: perspective(1100px) rotateY(-8deg); }
-  .e2ee-frame--3 { left: 46%; top: 30%; width: 15%; height: 40%; transform: perspective(1100px) rotateY(-8deg); }
-  .e2ee-frame--4 { left: 64%; top: 34%; width: 15%; height: 32%; transform: perspective(1100px) rotateY(-8deg); }
+  .e2ee-frame--1 { left: 2%; top: 22%; width: 17%; height: 56%; transform: perspective(1100px) rotateY(-8deg) translateX(var(--frame-x, 0px)); }
+  .e2ee-frame--2 { left: 24%; top: 26%; width: 15%; height: 48%; transform: perspective(1100px) rotateY(-8deg) translateX(var(--frame-x, 0px)); }
+  .e2ee-frame--3 { left: 46%; top: 30%; width: 15%; height: 40%; transform: perspective(1100px) rotateY(-8deg) translateX(var(--frame-x, 0px)); }
+  .e2ee-frame--4 { left: 64%; top: 34%; width: 15%; height: 32%; transform: perspective(1100px) rotateY(-8deg) translateX(var(--frame-x, 0px)); }
   .e2ee-filament { position: absolute; left: 4%; width: 92%; height: 1px; background: rgba(255, 255, 255, 0.18); }
   .e2ee-core { position: absolute; left: 76%; top: 30%; width: 18%; height: 40%; }
   /* Plates are three distinct materials: matte back, mid-tone middle,
@@ -523,10 +523,10 @@ const PIANO_FRONT_D_MOBILE = [
   .e2ee-plate--back { background: #0a0a0d; }
   .e2ee-plate--mid { transform: translate(4%, 6%); background: rgba(20, 20, 24, 0.85); }
   .e2ee-plate--front { transform: translate(8%, 12%); background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01) 55%); border-color: var(--border-highlight); box-shadow: 0 16px 28px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
-  .e2ee-seal-ring { position: absolute; left: 50%; top: 50%; width: 34%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 1.5px solid rgba(255, 60, 26, 0.55); border-radius: 50%; }
+  .e2ee-seal-ring { position: absolute; left: 50%; top: 50%; width: 34%; aspect-ratio: 1; transform: translate(-50%, -50%) scale(var(--ring-scale, 1)); border: 1.5px solid rgba(255, 60, 26, 0.55); border-radius: 50%; }
   .e2ee-core-message { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-family: var(--font-display); font-weight: 800; font-size: 3.4cqw; letter-spacing: 0.08em; line-height: 1; color: var(--text-primary); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); white-space: nowrap; }
   .e2ee-relay { position: absolute; left: 52%; top: 82%; width: 12%; height: 10%; border: 1px solid rgba(239, 237, 230, 0.2); border-radius: 4px; background: #0a0a0d repeating-linear-gradient(0deg, transparent 0 10px, rgba(239, 237, 230, 0.22) 10px 11px); box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
-  .e2ee-relay::before { content: ""; position: absolute; right: 8%; top: 18%; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-red); }
+  .e2ee-relay::before { content: ""; position: absolute; right: 8%; top: 18%; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-red); opacity: var(--led-o, 1); }
 
   [data-el="e2ee-fig"] { left: 2%; top: 3%; }
   [data-el="e2ee-signal-label"] { left: 74%; top: 74%; width: 24%; }
@@ -541,7 +541,7 @@ const PIANO_FRONT_D_MOBILE = [
   .sheet-bg-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .sheet-bg-svg--mobile { display: none; }
   .sheet-staff-line { stroke: rgba(255, 255, 255, 0.12); stroke-width: 1; }
-  .sheet-note-head { fill: rgba(255, 255, 255, 0.35); transform-box: fill-box; transform-origin: center; transform: rotate(-15deg); }
+  .sheet-note-head { fill: rgba(255, 255, 255, var(--note-a, 0.35)); transform-box: fill-box; transform-origin: center; transform: rotate(-15deg); }
   .sheet-note-head--final { fill: var(--accent-red); }
   .sheet-fan { position: absolute; inset: 0; }
   .sheet-deck { display: none; }
@@ -552,10 +552,10 @@ const PIANO_FRONT_D_MOBILE = [
      thread rests on its tile), and the strongest shadow; the back cards
      recede with a smaller scale and a deeper fog veil. */
   .sheet-card { position: absolute; display: flex; flex-direction: column; background: #ffffff; border-radius: 12px; border-radius: 0.83cqw; overflow: hidden; color: #111827; text-align: left; min-width: 0; width: 20%; height: 54%; box-shadow: 10px 12px 0 -4px #050506, 10px 12px 0 -3px rgba(239, 237, 230, 0.1), 0 18px 36px rgba(0, 0, 0, 0.45); }
-  .sheet-card--fan-0 { left: 41%; top: 6%; transform: rotate(-2deg); z-index: 3; box-shadow: 0 0 0 2px rgba(255, 60, 26, 0.9), 10px 12px 0 -4px #050506, 10px 12px 0 -3px rgba(239, 237, 230, 0.1), 0 24px 48px rgba(0, 0, 0, 0.55); }
-  .sheet-card--fan-1 { left: 23%; top: 13%; transform: rotate(1deg) scale(0.97); transform-origin: 50% 100%; z-index: 2; }
+  .sheet-card--fan-0 { left: 41%; top: 6%; transform: translateY(var(--fan-y, 0px)) rotate(var(--fan-rot, -2deg)); z-index: 3; box-shadow: 0 0 0 2px rgba(255, 60, 26, 0.9), 10px 12px 0 -4px #050506, 10px 12px 0 -3px rgba(239, 237, 230, 0.1), 0 24px 48px rgba(0, 0, 0, 0.55); }
+  .sheet-card--fan-1 { left: 23%; top: 13%; transform: translateY(var(--fan-y, 0px)) rotate(var(--fan-rot, 1deg)) scale(var(--fan-scale, 0.97)); transform-origin: 50% 100%; z-index: 2; }
   .sheet-card--fan-1::after, .sheet-card--fan-2::after { content: ""; position: absolute; inset: 0; background: rgba(6, 6, 8, 0.3); z-index: 1; pointer-events: none; }
-  .sheet-card--fan-2 { left: 5%; top: 20%; transform: rotate(-5deg) scale(0.94); transform-origin: 50% 100%; z-index: 1; }
+  .sheet-card--fan-2 { left: 5%; top: 20%; transform: translateY(var(--fan-y, 0px)) rotate(var(--fan-rot, -5deg)) scale(var(--fan-scale, 0.94)); transform-origin: 50% 100%; z-index: 1; }
   .sheet-card--fan-2::after { background: rgba(6, 6, 8, 0.5); }
   .sheet-card--featured .sheet-card__title { font-size: 18px; font-size: 1.25cqw; }
   .sheet-card__cover { position: relative; flex: 0 0 44%; overflow: hidden; }
@@ -586,10 +586,10 @@ const PIANO_FRONT_D_MOBILE = [
   .sheet-card__stats { display: flex; justify-content: space-between; margin-top: auto; padding-top: 6px; border-top: 1px solid #e5e7eb; font-size: 12px; font-size: 0.83cqw; color: #374151; }
   .sheet-card__free { color: #059669; font-weight: 600; }
 
-  .sheet-detail { position: absolute; left: 68%; top: 6%; width: 27%; height: 54%; transform: rotate(-2deg); display: flex; flex-direction: column; background: #0a0a0d; border: 1px solid var(--border-strong); border-radius: 12px; border-radius: 0.83cqw; overflow: hidden; box-shadow: 12px 14px 0 -6px #050506, 12px 14px 0 -5px rgba(239, 237, 230, 0.12), 0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
+  .sheet-detail { position: absolute; left: 68%; top: 6%; width: 27%; height: 54%; transform: translateY(var(--detail-y, 0px)) rotate(var(--detail-rot, -2deg)); display: flex; flex-direction: column; background: #0a0a0d; border: 1px solid var(--border-strong); border-radius: 12px; border-radius: 0.83cqw; overflow: hidden; box-shadow: 12px 14px 0 -6px #050506, 12px 14px 0 -5px rgba(239, 237, 230, 0.12), 0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
   .sheet-detail__cover { position: relative; flex: 0 0 38%; overflow: hidden; background: linear-gradient(135deg, #14b8a6, #0d9488); }
   .sheet-detail__cover::after { content: ""; position: absolute; inset: 0; background-image: repeating-linear-gradient(0deg, transparent 0 16px, rgba(255, 255, 255, 0.13) 16px 17px), repeating-linear-gradient(90deg, transparent 0 16px, rgba(255, 255, 255, 0.06) 16px 17px); }
-  .sheet-detail__play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; width: 48px; width: 3.33cqw; height: 48px; height: 3.33cqw; display: flex; align-items: center; justify-content: center; background: #ffffff; color: #2563eb; border-radius: 50%; font-size: 18px; font-size: 1.25cqw; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35); }
+  .sheet-detail__play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(var(--play-scale, 1)); z-index: 1; width: 48px; width: 3.33cqw; height: 48px; height: 3.33cqw; display: flex; align-items: center; justify-content: center; background: #ffffff; color: #2563eb; border-radius: 50%; font-size: 18px; font-size: 1.25cqw; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35); }
   .sheet-detail__info { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; padding: 0.56cqw 0.83cqw; min-height: 0; }
   .sheet-detail__title { font-family: var(--font-display); font-size: 22px; font-size: 1.53cqw; font-weight: 800; line-height: 1.05; color: var(--text-primary); }
   .sheet-detail__artist { font-family: var(--font-mono); font-size: 11px; font-size: 0.79cqw; line-height: 1.35; letter-spacing: 0.04em; color: var(--text-secondary); text-transform: uppercase; }
@@ -659,7 +659,7 @@ const PIANO_FRONT_D_MOBILE = [
   .piano-key.is-lit { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
   .piano-key.is-pressed { transform: translateY(6px); background: linear-gradient(180deg, #b3250f, #8f1d0a); box-shadow: inset 0 6px 10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
   .piano-key.is-held { background: linear-gradient(180deg, #ff5a38, #e8320f); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 0 0 2px rgba(255, 60, 26, 0.35), 0 6px 20px rgba(255, 60, 26, 0.4); }
-  .piano-key.is-held::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -14px; height: 4px; background: var(--accent-red); border-radius: 2px; }
+  .piano-key.is-held::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -14px; height: 4px; background: var(--accent-red); border-radius: 2px; transform: scaleX(var(--sustain, 1)); transform-origin: left center; }
   /* The bridge is a clamped metal bar over the belt, not a stray slab:
      a top-light gradient, a dark underside, a drop shadow seating it on
      the mid tier, and a red rivet at its centre. Its geometry is
@@ -692,9 +692,9 @@ const PIANO_FRONT_D_MOBILE = [
        the core at the bottom; the thread runs top -> bottom. */
     .e2ee-word { left: 5%; top: 4%; width: 90%; font-size: 16cqw; }
     .e2ee-filament { display: none; }
-    .e2ee-frame--1 { left: 30%; top: 36%; width: 40%; height: 10%; transform: none; }
-    .e2ee-frame--2 { left: 30%; top: 50%; width: 40%; height: 10%; transform: none; }
-    .e2ee-frame--3 { left: 30%; top: 64%; width: 40%; height: 10%; transform: none; }
+    .e2ee-frame--1 { left: 30%; top: 36%; width: 40%; height: 10%; transform: translateY(var(--frame-y, 0px)); }
+    .e2ee-frame--2 { left: 30%; top: 50%; width: 40%; height: 10%; transform: translateY(var(--frame-y, 0px)); }
+    .e2ee-frame--3 { left: 30%; top: 64%; width: 40%; height: 10%; transform: translateY(var(--frame-y, 0px)); }
     .e2ee-frame--4 { display: none; }
     .e2ee-core { left: 30%; top: 76%; width: 40%; height: 16%; }
     .e2ee-relay { display: none; }
@@ -710,7 +710,7 @@ const PIANO_FRONT_D_MOBILE = [
     .sheet-bg-svg { display: none; }
     .sheet-bg-svg--mobile { display: block; }
     .sheet-fan { z-index: 1; }
-    .sheet-card--fan-0 { left: 5%; top: 6%; width: 90%; height: 24%; transform: none; flex-direction: row; }
+    .sheet-card--fan-0 { left: 5%; top: 6%; width: 90%; height: 24%; transform: translateY(var(--fan-y, 0px)); flex-direction: row; }
     .sheet-card--fan-0 .sheet-card__cover { flex: 0 0 42%; }
     .sheet-card--fan-0 .sheet-card__body { flex: 1; justify-content: center; }
     .sheet-card--fan-0 .sheet-card__pills, .sheet-card--fan-0 .sheet-card__stats { display: none; }
@@ -727,7 +727,7 @@ const PIANO_FRONT_D_MOBILE = [
     .sheet-card__notes { font-size: 26px; font-size: 4.64cqw; }
     .sheet-card__notes--small { font-size: 14px; font-size: 2.5cqw; }
 
-    .sheet-detail { left: 5%; top: 32%; width: 90%; height: 24%; transform: none; flex-direction: row; }
+    .sheet-detail { left: 5%; top: 32%; width: 90%; height: 24%; transform: translateY(var(--detail-y, 0px)) rotate(var(--detail-rot, 0deg)); flex-direction: row; }
     .sheet-detail__cover { flex: 0 0 40%; }
     .sheet-detail__info { padding: 8px 10px; gap: 3px; }
     .sheet-detail__title { font-size: 18px; font-size: 3.21cqw; }

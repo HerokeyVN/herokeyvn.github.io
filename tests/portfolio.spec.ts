@@ -328,6 +328,208 @@ test("project visuals render their complete static composition without scrolling
   expect(state.coilLength as number).toBeGreaterThan(100);
 });
 
+test("project visuals choreograph through scrub and reach their final state at full scrub", async ({ page }) => {
+  // Phase 4: one scrubbed timeline per scene (trigger article, top 80% ->
+  // bottom 45%, scrub 1). At mid scrub the thread is partly drawn and the
+  // structural beats the belt has not reached yet are still in their start
+  // state (Piano H unpressed, Sheet key 14 unlit, E2EE seal coil undrawn).
+  // Scrolled 5% past the trigger end (round-9 lesson: the motion.ts stage
+  // entrance settles ~22px after the triggers first measure), p = 1: the
+  // approved static, every path fully drawn, keys lit/pressed/held, gauge
+  // at 88%. The mid-scrub assertions tolerate the ~0.02 progress shift
+  // that entrance causes; the windows they check are far from their edges.
+  test.slow();
+  await page.goto("/");
+  await page.waitForLoadState("domcontentloaded");
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(1500);
+
+  // Scroll so the scene's ScrollTrigger sits at progress p (p >= 1 scrolls
+  // 5% past the trigger end), then wait for the scrub playhead to catch
+  // up: apply() publishes the live progress on data-thread-progress.
+  const scrollToProgress = async (slug: string, p: number) => {
+    await page.evaluate(
+      ({ slug, p }) => {
+        const stage = document.querySelector(`[data-project-slug="${slug}"]`)!;
+        const article = stage.closest("article[data-project]")!;
+        const rect = article.getBoundingClientRect();
+        const top = rect.top + window.scrollY;
+        const range = rect.height + 0.35 * window.innerHeight;
+        const start = top - 0.8 * window.innerHeight;
+        const overshoot = p >= 1 ? 0.05 : 0;
+        window.scrollTo({ top: start + (p + overshoot) * range, behavior: "instant" });
+      },
+      { slug, p },
+    );
+    const target = p >= 1 ? 0.999 : p - 0.03;
+    await page.waitForFunction(
+      ({ slug, target }) =>
+        Number(
+          document.querySelector(`[data-project-slug="${slug}"]`)!.getAttribute("data-thread-progress") ?? 0,
+        ) >= target,
+      { slug, target },
+      { timeout: 10000 },
+    );
+    await page.waitForTimeout(1200);
+  };
+
+  const readScene = async (slug: string) =>
+    page.evaluate((slug) => {
+      const stage = document.querySelector(`[data-project-slug="${slug}"]`)!;
+      const isMobile = window.innerWidth <= 700;
+      const variant = isMobile ? "mobile" : "desktop";
+      const fracOf = (path: SVGPathElement) => {
+        const cs = getComputedStyle(path);
+        if (cs.strokeDasharray === "none") return 1;
+        if (cs.visibility === "hidden") return 0;
+        const nums = cs.strokeDasharray.split(/[\s,]+/).map(Number.parseFloat).filter((n) => !Number.isNaN(n));
+        if (!nums.length) return 0;
+        const ctm = path.getScreenCTM();
+        const scale = ctm ? Math.hypot(ctm.a, ctm.b) : 1;
+        return Math.min(1, (nums[0] ?? 0) / (path.getTotalLength() * scale));
+      };
+      const front = [...stage.querySelectorAll<SVGPathElement>(
+        `svg[data-variant="${variant}"][data-layer="thread-front"] .project-thread-path`,
+      )];
+      const back = [...stage.querySelectorAll<SVGPathElement>(
+        `svg[data-variant="${variant}"][data-layer="thread-back"] .project-thread-path`,
+      )];
+      const all = [...front, ...back];
+      const drawn = all.reduce((sum, path) => sum + fracOf(path), 0) / Math.max(1, all.length);
+      const dot = stage.querySelector(`svg[data-variant="${variant}"] .project-thread-dot--end`);
+      const tyOf = (transform: string) => {
+        const m = transform.match(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,[^,]+,\s*([^)]+)\)/);
+        return m ? Number(m[1]) : Number.NaN;
+      };
+      const out: Record<string, unknown> = {
+        progress: Number(stage.getAttribute("data-thread-progress") ?? 0),
+        isMobile,
+        drawn,
+        front: front.map(fracOf),
+        back: back.map(fracOf),
+        dotOpacity: dot ? Number(getComputedStyle(dot).opacity) : 0,
+      };
+      if (slug === "fb-messenger-e2ee") {
+        out.frames = [...stage.querySelectorAll(".e2ee-frame")]
+          .filter((el) => (el as HTMLElement).getBoundingClientRect().width > 0)
+          .map((el) => Number(getComputedStyle(el).opacity));
+        const msg = stage.querySelector(".e2ee-core-message")!;
+        out.coreMessage = Number(getComputedStyle(msg).opacity);
+        const labels = [...stage.querySelectorAll<HTMLElement>("[data-el$='-label'], [data-el$='-fig']")];
+        out.labels = Object.fromEntries(
+          labels.map((el) => [el.dataset.el ?? "", Number(getComputedStyle(el).opacity)]),
+        );
+      }
+      if (slug === "sky-sheet-store") {
+        const key14 = stage.querySelector('[data-key="14"]')!;
+        out.key14Lit = key14.classList.contains("is-lit");
+        out.key14Bg = getComputedStyle(key14).backgroundColor;
+        const practice = stage.querySelector('[data-el="sheet-practice"]')!;
+        out.practice = Number(getComputedStyle(practice).opacity);
+      }
+      if (slug === "sky-auto-piano") {
+        const h = stage.querySelector('[data-pkey="H"]')!;
+        const l = stage.querySelector('[data-pkey="L"]')!;
+        out.hPressed = h.classList.contains("is-pressed");
+        out.hTy = tyOf(getComputedStyle(h).transform);
+        out.hBg = getComputedStyle(h).backgroundImage;
+        out.lHeld = l.classList.contains("is-held");
+        out.lBg = getComputedStyle(l).backgroundImage;
+        const after = getComputedStyle(l, "::after");
+        out.sustainWidth = Number.parseFloat(after.width);
+        out.sustainTransform = after.transform;
+        const gauge = stage.querySelector(".piano-gauge")!;
+        const fill = stage.querySelector(".piano-gauge__fill")!;
+        out.gauge = fill.getBoundingClientRect().width / gauge.getBoundingClientRect().width;
+      }
+      return out;
+    }, slug);
+
+  // E2EE mid (p 0.35): entry + frame crossings drawn, seal coil not
+  // started, frames and core message still settling in.
+  await scrollToProgress("fb-messenger-e2ee", 0.35);
+  const e2eeMid = await readScene("fb-messenger-e2ee");
+  expect(e2eeMid.progress as number).toBeGreaterThanOrEqual(0.3);
+  expect(e2eeMid.progress as number).toBeLessThan(0.5);
+  expect(e2eeMid.drawn as number).toBeGreaterThan(0);
+  expect(e2eeMid.drawn as number).toBeLessThan(1);
+  const e2eeCoil = (e2eeMid.front as number[])[(e2eeMid.isMobile as boolean) ? 1 : 2]!;
+  expect(e2eeCoil).toBe(0);
+  for (const opacity of e2eeMid.frames as number[]) expect(opacity).toBeLessThan(1);
+  expect(e2eeMid.coreMessage as number).toBeLessThan(1);
+
+  // E2EE full: every path drawn, end dot in, labels and message at full opacity.
+  await scrollToProgress("fb-messenger-e2ee", 1);
+  const e2eeFull = await readScene("fb-messenger-e2ee");
+  expect(e2eeFull.progress as number).toBe(1);
+  expect(e2eeFull.drawn as number).toBe(1);
+  expect(e2eeFull.dotOpacity as number).toBe(1);
+  for (const opacity of e2eeFull.frames as number[]) expect(opacity).toBe(1);
+  expect(e2eeFull.coreMessage as number).toBe(1);
+  for (const opacity of Object.values(e2eeFull.labels as Record<string, number>)) {
+    expect(opacity).toBe(1);
+  }
+
+  // Sheet Store mid (p 0.45): melody partly drawn, practice strip still
+  // hidden, key 14 still unlit.
+  await scrollToProgress("sky-sheet-store", 0.45);
+  const sheetMid = await readScene("sky-sheet-store");
+  expect(sheetMid.progress as number).toBeGreaterThanOrEqual(0.4);
+  expect(sheetMid.progress as number).toBeLessThan(0.55);
+  expect(sheetMid.drawn as number).toBeGreaterThan(0);
+  expect(sheetMid.drawn as number).toBeLessThan(1);
+  expect((sheetMid.front as number[])[1]!).toBeGreaterThan(0);
+  expect((sheetMid.front as number[])[1]!).toBeLessThan(1);
+  expect(sheetMid.practice as number).toBe(0);
+  expect(sheetMid.key14Bg as string).toBe("rgb(20, 20, 22)");
+
+  // Sheet Store full: every path drawn, end dot in, key 14 lit red.
+  await scrollToProgress("sky-sheet-store", 1);
+  const sheetFull = await readScene("sky-sheet-store");
+  expect(sheetFull.progress as number).toBe(1);
+  expect(sheetFull.drawn as number).toBe(1);
+  expect(sheetFull.dotOpacity as number).toBe(1);
+  expect(sheetFull.key14Lit as boolean).toBe(true);
+  expect(sheetFull.key14Bg as string).toBe("rgb(255, 60, 26)");
+  expect(sheetFull.practice as number).toBe(1);
+
+  // Piano mid (p 0.15): belt partly drawn, H not yet pressed, gauge just starting.
+  await scrollToProgress("sky-auto-piano", 0.15);
+  const pianoMid = await readScene("sky-auto-piano");
+  expect(pianoMid.progress as number).toBeGreaterThanOrEqual(0.1);
+  expect(pianoMid.progress as number).toBeLessThan(0.25);
+  expect(pianoMid.drawn as number).toBeGreaterThan(0);
+  expect(pianoMid.drawn as number).toBeLessThan(1);
+  expect(pianoMid.hTy as number).toBe(0);
+  expect(pianoMid.hBg as string).toContain("rgb(28, 28, 32)");
+  expect(pianoMid.gauge as number).toBeLessThan(0.1);
+
+  // Piano half (p 0.5): H pressed and sunk, L not yet held.
+  await scrollToProgress("sky-auto-piano", 0.5);
+  const pianoHalf = await readScene("sky-auto-piano");
+  expect(pianoHalf.progress as number).toBeGreaterThanOrEqual(0.45);
+  expect(pianoHalf.progress as number).toBeLessThan(0.6);
+  expect(pianoHalf.hPressed as boolean).toBe(true);
+  expect(pianoHalf.hTy as number).toBe(6);
+  expect(pianoHalf.hBg as string).toContain("rgb(179, 37, 15)");
+  expect(pianoHalf.lBg as string).toContain("rgb(28, 28, 32)");
+
+  // Piano full: every path drawn, end dot in, H pressed, L held with its
+  // sustain bar grown, gauge at 88%.
+  await scrollToProgress("sky-auto-piano", 1);
+  const pianoFull = await readScene("sky-auto-piano");
+  expect(pianoFull.progress as number).toBe(1);
+  expect(pianoFull.drawn as number).toBe(1);
+  expect(pianoFull.dotOpacity as number).toBe(1);
+  expect(pianoFull.hPressed as boolean).toBe(true);
+  expect(pianoFull.hTy as number).toBe(6);
+  expect(pianoFull.hBg as string).toContain("rgb(179, 37, 15)");
+  expect(pianoFull.lHeld as boolean).toBe(true);
+  expect(pianoFull.lBg as string).toContain("rgb(255, 90, 56)");
+  expect(pianoFull.sustainWidth as number).toBeGreaterThan(0);
+  expect(pianoFull.gauge as number).toBeCloseTo(0.88, 2);
+});
+
 test("project motif threads enter and exit at the stage edges, land on their targets, and keep clear of in-stage text", async ({ page }) => {
   // Round 10 (static, no scrolling): the thread enters at one stage edge
   // and exits at the opposite edge, the Sheet Store melody starts on the
