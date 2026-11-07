@@ -120,7 +120,7 @@ const E2EE_BACK_D_MOBILE = [
 ];
 const E2EE_FRONT_D_MOBILE = [
   "M 280 0 L 280 280", // in front of the letters and frame 1
-  "M 280 336 L 280 420 C 245 438, 315 452, 280 470 C 245 488, 315 502, 280 520", // S-coil seal
+  "M 280 336 L 280 420 C 280 445, 262 455, 280 470 C 298 485, 280 495, 280 520", // S-coil seal, gentle weave (round 11: was a tight S with 62.8deg kinks at both ends)
   "M 280 520 L 280 560",
 ];
 
@@ -196,15 +196,15 @@ const PIANO_TIERS = [
 // it (thread-back), and dips onto H and L (thread-front).
 const PIANO_BACK_D = ["M 408 250 L 552 250"];
 const PIANO_FRONT_D = [
-  "M 0 250 L 300 250 L 330 286 L 360 250 L 408 250",
-  "M 552 250 L 642 250 L 672 286 L 702 250 L 900 250",
+  "M 0 250 L 280 250 C 305 250, 305 284, 330 284 C 355 284, 355 250, 380 250 L 408 250",
+  "M 552 250 L 622 250 C 647 250, 647 284, 672 284 C 697 284, 697 250, 722 250 L 900 250",
 ];
 // Belt, mobile (560x560): down the left edge, across the mid tier (dips
 // onto H at x 90 and L at x 378, y 176-196), then down the right edge,
 // passing behind the front tier (y 258-342) before exiting at the bottom.
-const PIANO_BACK_D_MOBILE = ["M 500 163 L 500 320"];
+const PIANO_BACK_D_MOBILE = ["M 500 193 L 500 320"];
 const PIANO_FRONT_D_MOBILE = [
-  "M 30 0 L 30 163 L 69 163 L 89 191 L 109 163 L 354 163 L 374 191 L 394 163 L 500 163",
+  "M 30 0 L 30 135 C 30 150, 40 163, 55 163 C 72 163, 72 191, 90 191 C 108 191, 108 163, 125 163 L 340 163 C 357 163, 357 191, 375 191 C 393 191, 393 163, 410 163 L 470 163 C 490 163, 500 173, 500 193",
   "M 500 320 L 500 560",
 ];
 ---
@@ -317,10 +317,10 @@ const PIANO_FRONT_D_MOBILE = [
     </div>
 
     <svg class="project-thread-svg project-thread-svg--back project-thread-svg--desktop" data-layer="thread-back" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 1173 114 C 1100 210, 950 320, 806 414"></path>
+      <path class="project-thread-path" d="M 1197 132 C 1161 180, 940 320, 900 360 C 872 388, 730 320, 730 370 C 730 394, 765 420, 806 414"></path>
     </svg>
     <svg class="project-thread-svg project-thread-svg--back project-thread-svg--mobile" data-layer="thread-back" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 130 246 C 100 300, 80 340, 56 380"></path>
+      <path class="project-thread-path" d="M 185 300 C 185 345, 40 310, 40 355 C 40 368, 44 381, 56 380"></path>
     </svg>
 
     <div class="layer layer--fg" data-layer="fg">
@@ -359,16 +359,16 @@ const PIANO_FRONT_D_MOBILE = [
     </div>
 
     <svg class="project-thread-svg project-thread-svg--front project-thread-svg--desktop" data-layer="thread-front" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 0 185 L 878 185 C 1000 180, 1100 165, 1173 114"></path>
+      <path class="project-thread-path" d="M 0 185 L 878 185 C 1000 185, 1230 88, 1197 132"></path>
       <path class="project-thread-path" d={SHEET_MELODY}></path>
-      <path class="project-thread-path" d="M 1353 336 C 1349 420, 1348 480, 1347 520"></path>
+      <path class="project-thread-path" d="M 1353 336 C 1390 330, 1370 390, 1370 420 C 1370 460, 1347 480, 1347 520"></path>
       <path class="project-thread-path" d="M 1347 520 L 1440 520"></path>
       <circle class="project-thread-dot project-thread-dot--end" cx="1436" cy="520" r="4"></circle>
     </svg>
     <svg class="project-thread-svg project-thread-svg--front project-thread-svg--mobile" data-layer="thread-front" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 34 0 L 34 246 L 130 246"></path>
+      <path class="project-thread-path" d="M 34 0 L 34 210 C 34 236, 58 246, 90 246 L 150 246 C 172 246, 185 258, 185 280 L 185 300"></path>
       <path class="project-thread-path" d={SHEET_MELODY_MOBILE}></path>
-      <path class="project-thread-path" d="M 504 350 C 500 420, 490 470, 484 507"></path>
+      <path class="project-thread-path" d="M 504 350 C 540 348, 520 400, 520 440 C 520 470, 484 480, 484 507"></path>
       <path class="project-thread-path" d="M 484 507 L 484 560"></path>
       <circle class="project-thread-dot project-thread-dot--end" cx="484" cy="556" r="4"></circle>
     </svg>

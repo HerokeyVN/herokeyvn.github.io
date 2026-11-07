@@ -1891,3 +1891,267 @@ test("verifies contiguous open-path topology across hero, handoff, glyph connect
     }
   }
 });
+
+test("round 11: thread geometry is G1-continuous with controlled curvature", async ({ page }) => {
+  // Guards the round-11 thread redesign: every joint between consecutive
+  // cubics (within a segment and across the hero/handoff/connector/site
+  // boundaries) is tangent-continuous, every cubic keeps a minimum radius
+  // of curvature, glyph connectors leave/arrive along the contour
+  // tangents, the contact approach stays on-canvas, and the site-1 exit
+  // stays clear of the About statement and profile. Thresholds sit below
+  // the measured values with margin (worst measured joint mismatch 0.6deg,
+  // worst cubic radius 5px on the tiny mobile connector rise); they do not
+  // chase the measurements.
+  const viewports = [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")].reduce(
+        (t, p) => t + p.getTotalLength(),
+        0,
+      ) > 1000,
+    );
+
+    const geom = await page.evaluate(() => {
+      type Pt = { x: number; y: number };
+      type Cmd = { cmd: string; from: Pt; c1?: Pt; c2?: Pt; p: Pt };
+      const parseD = (d: string): Cmd[] => {
+        const tokens = d.match(/[MLC]|[-+]?\d*\.?\d+/g) || [];
+        const cmds: Cmd[] = [];
+        let i = 0;
+        let cmd = "";
+        let cur: Pt = { x: 0, y: 0 };
+        while (i < tokens.length) {
+          const t = tokens[i]!;
+          if (t === "M" || t === "L" || t === "C") {
+            cmd = t;
+            i++;
+            continue;
+          }
+          const x = Number.parseFloat(tokens[i]!);
+          const y = Number.parseFloat(tokens[i + 1]!);
+          i += 2;
+          if (cmd === "M") {
+            cur = { x, y };
+            cmds.push({ cmd: "M", from: cur, p: { x, y } });
+            cmd = "L";
+          } else if (cmd === "L") {
+            cmds.push({ cmd: "L", from: cur, p: { x, y } });
+            cur = { x, y };
+          } else if (cmd === "C") {
+            const c1 = { x, y };
+            const c2 = { x: Number.parseFloat(tokens[i]!), y: Number.parseFloat(tokens[i + 1]!) };
+            const p = { x: Number.parseFloat(tokens[i + 2]!), y: Number.parseFloat(tokens[i + 3]!) };
+            i += 4;
+            cmds.push({ cmd: "C", from: cur, c1, c2, p });
+            cur = p;
+          }
+        }
+        return cmds;
+      };
+      const sub = (a: Pt, b: Pt): Pt => ({ x: a.x - b.x, y: a.y - b.y });
+      const norm = (v: Pt): Pt => {
+        const l = Math.hypot(v.x, v.y) || 1;
+        return { x: v.x / l, y: v.y / l };
+      };
+      const angleBetween = (a: Pt, b: Pt) =>
+        (Math.acos(Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y))) * 180) / Math.PI;
+      const startTangent = (c: Cmd): Pt => (c.cmd === "L" ? norm(sub(c.p, c.from)) : norm(sub(c.c1!, c.from)));
+      const endTangent = (c: Cmd): Pt => (c.cmd === "L" ? norm(sub(c.p, c.from)) : norm(sub(c.p, c.c2!)));
+      // Max curvature along a cubic by sampling the analytic derivative.
+      const maxCurvature = (c: Cmd): number => {
+        if (c.cmd !== "C") return 0;
+        let max = 0;
+        for (let k = 0; k <= 40; k++) {
+          const t = k / 40;
+          const mt = 1 - t;
+          const dx =
+            3 * mt * mt * (c.c1!.x - c.from.x) + 6 * mt * t * (c.c2!.x - c.c1!.x) + 3 * t * t * (c.p.x - c.c2!.x);
+          const dy =
+            3 * mt * mt * (c.c1!.y - c.from.y) + 6 * mt * t * (c.c2!.y - c.c1!.y) + 3 * t * t * (c.p.y - c.c2!.y);
+          const ddx = 6 * mt * (c.c2!.x - 2 * c.c1!.x + c.from.x) + 6 * t * (c.p.x - 2 * c.c2!.x + c.c1!.x);
+          const ddy = 6 * mt * (c.c2!.y - 2 * c.c1!.y + c.from.y) + 6 * t * (c.p.y - 2 * c.c2!.y + c.c1!.y);
+          const sp = Math.hypot(dx, dy);
+          if (sp < 1e-6) continue;
+          max = Math.max(max, Math.abs(dx * ddy - dy * ddx) / (sp * sp * sp));
+        }
+        return max;
+      };
+
+      const sitePaths = [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")].sort(
+        (a, b) => Number(a.dataset.siteThreadSegment) - Number(b.dataset.siteThreadSegment),
+      );
+      const siteCmds = sitePaths.map((p) => parseD(p.getAttribute("d") || ""));
+
+      // Internal joints + per-cubic min radius for every site segment.
+      const maxJointMismatch = { value: 0 };
+      const minRadius: (number | null)[] = [];
+      siteCmds.forEach((cmds) => {
+        let segMin: number | null = null;
+        for (let i = 1; i < cmds.length; i++) {
+          const prev = cmds[i - 1]!;
+          const cur = cmds[i]!;
+          if (prev.cmd === "M") continue;
+          maxJointMismatch.value = Math.max(
+            maxJointMismatch.value,
+            angleBetween(endTangent(prev), startTangent(cur)),
+          );
+        }
+        cmds
+          .filter((c) => c.cmd === "C")
+          .forEach((c) => {
+            const k = maxCurvature(c);
+            if (k > 0) segMin = segMin === null ? 1 / k : Math.min(segMin, 1 / k);
+          });
+        minRadius.push(segMin);
+      });
+
+      // Cross-segment joints: site i end vs site i+1 start (1->2->3->4->5).
+      for (let i = 1; i <= 4; i++) {
+        const a = siteCmds[i]![siteCmds[i]!.length - 1]!;
+        const b = siteCmds[i + 1]!.find((c) => c.cmd !== "M")!;
+        maxJointMismatch.value = Math.max(maxJointMismatch.value, angleBetween(endTangent(a), startTangent(b)));
+      }
+
+      // Hero exit -> handoff start. getTotalLength() returns real user
+      // units (pathLength="1" does not rescale it), so the end tangent is
+      // sampled over the last 4 absolute px, with no wrap (open path).
+      const isMobile = window.innerWidth <= 700;
+      const heroExit = document.querySelector<SVGPathElement>(
+        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
+      )!;
+      const siteSvg = sitePaths[0]!.ownerSVGElement!;
+      const toSiteSpace = (el: SVGPathElement, distance: number): Pt | null => {
+        const pt = el.getPointAtLength(distance);
+        const pathMatrix = el.getScreenCTM();
+        const siteMatrix = siteSvg.getScreenCTM();
+        if (!pathMatrix || !siteMatrix) return null;
+        const q = new DOMPoint(pt.x, pt.y).matrixTransform(pathMatrix).matrixTransform(siteMatrix.inverse());
+        return { x: q.x, y: q.y };
+      };
+      const heroLen = heroExit.getTotalLength();
+      const heroA = toSiteSpace(heroExit, heroLen - 4)!;
+      const heroB = toSiteSpace(heroExit, heroLen)!;
+      const heroExitTan = norm(sub(heroB, heroA));
+      const handoffFirst = siteCmds[0]!.find((c) => c.cmd !== "M")!;
+      maxJointMismatch.value = Math.max(
+        maxJointMismatch.value,
+        angleBetween(heroExitTan, startTangent(handoffFirst)),
+      );
+
+      // Handoff end -> connector start.
+      const s0End = siteCmds[0]![siteCmds[0]!.length - 1]!;
+      const s6First = siteCmds[6]!.find((c) => c.cmd !== "M")!;
+      maxJointMismatch.value = Math.max(
+        maxJointMismatch.value,
+        angleBetween(endTangent(s0End), startTangent(s6First)),
+      );
+
+      // Glyph connectors: depart along the from-contour arrival tangent,
+      // arrive along the to-contour departure tangent.
+      let maxConnectorMismatch = 0;
+      const connectors = [...document.querySelectorAll<SVGPathElement>("[data-glyph-connector]")];
+      for (const conn of connectors) {
+        const fromKey = conn.getAttribute("data-from-glyph")!;
+        const toKey = conn.getAttribute("data-to-glyph")!;
+        const connCmds = parseD(conn.getAttribute("d") || "");
+        const connFirst = connCmds.find((c) => c.cmd !== "M")!;
+        const connLast = connCmds[connCmds.length - 1]!;
+        const contourTangentAt = (key: string, pt: Pt, forward: boolean): Pt => {
+          const contour = document.querySelector<SVGPathElement>(
+            `path[data-glyph-key='${key}'][data-glyph-contour='0']`,
+          )!;
+          const len = contour.getTotalLength();
+          // Closest sample to the junction point, in site space.
+          let bestD = 0;
+          let bestDist = Number.POSITIVE_INFINITY;
+          for (let s = 0; s <= len; s += len / 240) {
+            const q = toSiteSpace(contour, s)!;
+            const dist = Math.hypot(q.x - pt.x, q.y - pt.y);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestD = s;
+            }
+          }
+          const eps = Math.min(12, len / 4);
+          const at = forward ? bestD : (bestD - eps + len) % len;
+          const to = forward ? (bestD + eps) % len : bestD;
+          const a = toSiteSpace(contour, at)!;
+          const b = toSiteSpace(contour, to)!;
+          return norm(sub(b, a));
+        };
+        const fromPt = connCmds[0]!.p;
+        const toPt = connLast.p;
+        maxConnectorMismatch = Math.max(
+          maxConnectorMismatch,
+          angleBetween(contourTangentAt(fromKey, fromPt, false), startTangent(connFirst)),
+          angleBetween(contourTangentAt(toKey, toPt, true), endTangent(connLast)),
+        );
+      }
+
+      // Site-5 (contact approach) must stay on-canvas.
+      let site5MinX = Number.POSITIVE_INFINITY;
+      {
+        const s5 = sitePaths[5]!;
+        const len = s5.getTotalLength();
+        for (let s = 0; s <= len; s += 2) {
+          site5MinX = Math.min(site5MinX, s5.getPointAtLength(s).x);
+        }
+      }
+
+      // Site-1 exit must stay clear of the About statement and profile.
+      const distToBox = (p: Pt, b: { left: number; right: number; top: number; bottom: number }) => {
+        const dx = Math.max(b.left - p.x, 0, p.x - b.right);
+        const dy = Math.max(b.top - p.y, 0, p.y - b.bottom);
+        return Math.hypot(dx, dy);
+      };
+      const minDistPathToBox = (path: SVGPathElement, box: { left: number; right: number; top: number; bottom: number }) => {
+        const len = path.getTotalLength();
+        let min = Number.POSITIVE_INFINITY;
+        for (let s = 0; s <= len; s += 2) {
+          min = Math.min(min, distToBox(path.getPointAtLength(s), box));
+        }
+        return min;
+      };
+      const rectOf = (sel: string) => {
+        const el = document.querySelector(sel)!;
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top + scrollY, bottom: r.bottom + scrollY };
+      };
+      const site1Clearance = {
+        statement: minDistPathToBox(sitePaths[1]!, rectOf(".about__statement")),
+        profile: minDistPathToBox(sitePaths[1]!, rectOf(".about__profile")),
+      };
+
+      return {
+        maxJointMismatch: Math.round(maxJointMismatch.value * 10) / 10,
+        maxConnectorMismatch: Math.round(maxConnectorMismatch * 10) / 10,
+        minRadius: minRadius.map((r) => (r === null ? null : Math.round(r * 10) / 10)),
+        site5MinX: Math.round(site5MinX * 10) / 10,
+        site1Clearance: {
+          statement: Math.round(site1Clearance.statement * 10) / 10,
+          profile: Math.round(site1Clearance.profile * 10) / 10,
+        },
+      };
+    });
+
+    expect(geom.maxJointMismatch, `worst joint mismatch at ${vp.width}px`).toBeLessThanOrEqual(2);
+    expect(geom.maxConnectorMismatch, `worst connector mismatch at ${vp.width}px`).toBeLessThanOrEqual(2);
+    // Per-segment min radius: handoff 20, site-1 exit 8 (mobile cap R=11),
+    // site-3 stadiums 10, site-6 4 (tiny mobile rise), contact approach 20.
+    // Site-2/4 are straight runs (null); any cubic there must still be >= 20.
+    const radiusFloor = [20, 8, 20, 10, 20, 20, 4];
+    geom.minRadius.forEach((r, i) => {
+      if (r !== null) expect(r, `site-${i} min radius at ${vp.width}px`).toBeGreaterThanOrEqual(radiusFloor[i]!);
+    });
+    expect(geom.site5MinX, `site-5 min x at ${vp.width}px`).toBeGreaterThanOrEqual(0);
+    expect(geom.site1Clearance.statement, `site-1 statement clearance at ${vp.width}px`).toBeGreaterThanOrEqual(10);
+    expect(geom.site1Clearance.profile, `site-1 profile clearance at ${vp.width}px`).toBeGreaterThanOrEqual(10);
+  }
+});
