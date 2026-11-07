@@ -200,13 +200,14 @@ const pressKey = (
 ) => {
   if (!key) return;
   if (t >= 1) {
-    ["transform", "background", "color", "box-shadow"].forEach((prop) =>
+    ["transform", "background", "border-color", "color", "box-shadow"].forEach((prop) =>
       key.style.removeProperty(prop),
     );
     return;
   }
   if (sink) key.style.transform = `translateY(${(6 * t).toFixed(2)}px)`;
   key.style.background = `linear-gradient(180deg, ${lerpColor(KEY_UNLIT_TOP, bg[0], t)}, ${lerpColor(KEY_UNLIT_BOTTOM, bg[1], t)})`;
+  key.style.borderColor = lerpColor("rgba(239, 237, 230, 0.16)", "#ff3c1a", t);
   key.style.color = lerpColor(KEY_UNLIT_COLOR, "#ffffff", t);
   key.style.boxShadow = t >= 0.5 ? shadow : KEY_UNLIT_SHADOW;
 };
