@@ -254,6 +254,48 @@ Verification status (2026-11-07 ~15:31 +07, verification agent):
   - Piano H/L keys show a thin red border at p = 0 (and L at mid scrub before it lights): `pressKey` overrides background/color/shadow/transform but not `border-color`, so the red border from the authored `.is-lit` / `.is-pressed` / `.is-held` classes shows through while the key is still unlit. Reads as the two target keys being marked; does not read as pressed. Fix would be a one-line border-color override in `pressKey` - left for a polish pass, not worth a re-verify cycle on its own.
   - Mobile Piano belt touches L before L lights: the mobile entry path (0-0.5) crosses the whole mid tier including the L dip, while L presses at 0.62-0.72, so the belt rests on L ~0.12p before the key lights. Desktop does not have this (the L dip lives in the exit path, timed with the press). Visually the mid state still reads correctly - the belt laid across the keys, H pressed, L waiting.
 
+## Round 12: one continuous site thread (Key feedback 2026-11-08 19:06, six points)
+
+- (1) After the SEE. glyphs the site thread veered right to the dot instead of running straight down through the point below - fix the route. (A1)
+- (2) The thread should also trace the outlined Experience headline letters (MEETS INFRASTRUCTURE.) like it traces USERS DON'T SEE. (A1)
+- (3) Interactive timeline animation for the career timeline - Key picked Idea B (career timeline in Experience) 2026-11-08 19:08. (A2)
+- (4/5/6) The MAIN site thread must be the one interacting with the projects, not a separate per-project thread, and the tangled knot on the E2EE HELLO text looks wrong - same for Sheet Store and Piano. (B + integration)
+
+Integration design (`src/scripts/site-thread.ts`, `src/components/ProjectVisual.astro`):
+
+- One continuous site thread. The stage `thread-back` / `thread-front` SVGs STAY as rendering layers (they are what let the thread pass behind the E2EE frames 2/4 and in front of others). There is no separate thread system anymore.
+- `render()` drives the stage paths' dashes via the exported `dashSetter` from `project-threads.ts` (Round 6 invariant + round-8 CTM scale fix, unchanged).
+- Each stage path's draw window is derived from its article's ScrollTrigger range (start `top 80%`, end `bottom 45%`), subdivided by the DOM choreography's p-windows, so thread and DOM share one progress value.
+- Route (travel order, desktop + mobile separately): gutter run down to the E2EE entry -> E2EE stage paths in travel order -> connector to the Sheet Store entry -> Sheet paths -> connector to the Piano entry -> Piano belt paths -> gutter run to skillsTop. Connectors are gutter/gap runs joined by quarter-turn cubics (`makeRoute`, 0.5523r control points), G1 by construction. The chain tiles gaplessly from site-2's end to site-4's start.
+- Two layout axes, measured live in `build()`: stage variant (width <= 700 -> mobile SVG, top/bottom corridors, entries run south; else desktop SVG, entries run east) and exhibit columns (width > 1024 -> two columns; <= 1024 -> single column, visual on top). Piano entry on two-column layouts is approached down the inter-column gap (the content column sits west of the stage), otherwise from the left gutter.
+- The head dot travels via `pointInSiteSpace` (CTM mapping, works for stage paths) and hides while the active segment is a stage back-layer path (`occluded`), so it never floats over a frame the thread passes behind. Each stage's end dot fades in as its exit completes (`win(p, dotEnd-0.03, dotEnd+0.02)`), matching the old per-project `applyThread`.
+- Fallback: if any stage is missing, the old Projects gutter run (stadium crossings) is kept for `pathData[3]` so the thread never breaks.
+- E2EE front wave fix (integration): the single-cubic waves met the straight back segments at ~6.3deg / 6.1deg / 6.1deg - a single cubic cannot wave with horizontal end tangents. Replaced with two-cubic waves with horizontal end tangents and a G1 mid joint (12.5deg both sides), same ~3px amplitude and rise-then-fall / fall-then-rise shape. `E2EE_FRONT_D[0]` and `[1]` in `ProjectVisual.astro`; anchor doc section 5 updated.
+- Sheet connector -> melody joint re-measured (integration): B's -4.6deg desktop / -3.7deg mobile are the connector's ABSOLUTE end tangents, not the mismatch. The melody departs at the same angle (desktop: connector end tangent (29.9,-2.4) -> -4.59deg, melody start tangent (13.02,-1.05) -> -4.6deg; mobile: -3.77deg vs -3.86deg). Actual mismatch ~0.0deg desktop / ~0.1deg mobile - inside the 2deg tolerance. No geometry fix needed; the measurement was corrected, and the geometry test now asserts the mismatch directly. Offline re-measurement (see below): 0.19deg desktop / 0.02deg mobile.
+- Sheet descent -> exit stays the documented 90deg touch-point turn (round 11 exception), kept in both the chain and stage checks.
+
+Test rework (`tests/portfolio.spec.ts`, honest extension - no timeouts raised, no tolerances relaxed):
+
+- Static test: coil assertion re-pointed at the E2EE through-path (desktop front path index 2, mobile index 1; `throughLength > 100`, ~180 desktop / ~255 mobile viewBox units); `coilLength` renamed to `throughLength`.
+- Choreography test: E2EE mid assertion renamed `e2eeCoil` -> `e2eeThrough` (front index mobile 1 / desktop 2, expected 0 at p 0.35, since the through-path draws in the old coil window); note added that the thread is now the one site thread.
+- Collision test: segment 3 (C0) gets a 12px endpoint exclusion (its endpoint meets the E2EE stage entry by design); `[data-project-connector]` paths sampled with the protected set MINUS `.project-exhibit` (connectors legitimately travel inside the exhibit box, down inter-column gaps and to stage edges) plus 12px exclusion at both endpoints.
+- Geometry test: old 1->2->3->4->5 cross-segment loop replaced by the project chain check (site-2 -> C0 -> stage paths -> C1 -> Sheet -> C2 -> Piano -> C3 -> site-4 -> site-5, consecutive tangents compared in site space via CTM sampling); site-1->site-2 geometric joint kept; stage paths get internal-joint + min-radius checks in viewBox space plus the Sheet connector->melody joint reported separately; connectors C1-C3 get internal-joint + min-radius checks. New expectations: `chainLength` 20 desktop / 19 mobile, `maxChainJointMismatch` <= 2deg, `maxStageJointMismatch` <= 2deg, `sheetConnectorMelody` <= 2deg, `minStageRadius` >= 5 (viewBox units), `minConnectorRadius` >= 8. Site-3 radius floor stays 10 (C0: desktop R=60 turn, mobile R=16 jog).
+
+Verification status (2026-11-08 ~15:20 +07, integration agent - BROWSER VERIFICATION BLOCKED, EPERM fault never cleared):
+
+- `npm run check`: PASS, 0 errors / 0 warnings / 7 hints (verified after all edits, including the capture script).
+- `npm run build`: BLOCKED by the EPERM fault (rolldown mmap write fails: `Failed to write file in .../dist/.prerender/prerender-entry.Cu-Zjnhy.mjs - Operation not permitted (os error 1)`). Fault active ~14:19-15:20 +07 (~60 min) and never cleared: 7 foreground build attempts, 3 Chromium launch attempts, ~18 mmap probes (foreground + a 10-attempt background retry loop, exhausted 15:20) - all failing the same way. Direct `touch` / node `writeFileSync` succeed in foreground exec sessions; file-backed mmap MAP_SHARED returns EPERM; Chromium launch fails (browser closes on launch, "Target page, context or browser has been closed"). Second finding: in backgrounded / nohup-detached sessions even plain file writes fail (0-byte files), so only foreground exec writes work - a backgrounded build could not succeed even if mmap cleared. NOTHING PUSHED: the integration is unverified, no commits were made.
+- Full Playwright suite with CI=true: NOT RUN (needs Chromium + a preview build).
+- Offline geometry verification (no browser needed, `node /tmp/verify-stage-geometry.mjs`): ALL 20 checks PASSED - E2EE/Sheet/Piano stage joints <= 0.56deg, min radii >= 6.5 viewBox units, Sheet connector->melody 0.19deg desktop / 0.02deg mobile, `makeRoute` synthetic connector joints 0.00deg, min radius 29.8px. This covers the stage paths only; the site-space connectors need live layout and are NOT covered.
+- Captures: `scripts/capture-round-12-motif8.mjs` written (desktop 1440x900 + mobile 390x844 + 1280x720 for glyph exit + timeline; glyph exit at 4 scroll steps, Experience headline mid/late, career timeline, per-scene mid/final/reverse-mid via CDP stage clips, dev server on 4322); NOT RUN (needs Chromium).
+- A2 timeline probe (`scripts/probe-round-12-timeline.mjs`, dev server on 4322): NOT RUN yet (needs Chromium).
+- One-off probe scripts to delete before committing: `scripts/probe-round-12-timeline.mjs`, `scripts/check-round-12-timeline-math.mjs`. Keep capture scripts.
+
+Known issues (reported, not fixed - no code change):
+
+- Mobile "INFRASTRUCTURE." headline overflow: pre-existing layout defect found by A1; needs Key's decision, NOT fixed here.
+- Mobile Piano belt touches L before L lights: carried over from Phase 4 (see above); unchanged by round 12.
+
 ## Automated verification evidence
 
 - Verification commands:
