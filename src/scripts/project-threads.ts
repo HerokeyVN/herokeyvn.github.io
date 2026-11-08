@@ -9,15 +9,23 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 // ScrollTrigger on the timeline only (trigger: the project article, start
 // "top 80%", end "bottom 45%", scrub 1, ease none). The timeline drives a
 // single proxy tween {p: 0 -> 1}; its onUpdate calls one apply(p) per
-// scene, which drives thread dash, DOM states, key/bar lighting and the
-// playhead together, so nothing drifts and everything is fully reversible.
+// scene, which drives DOM states, key/bar lighting and the playhead
+// together, so nothing drifts and everything is fully reversible.
 // No tween is created per scroll event.
+//
+// Round 12: this file no longer draws the thread. The stage paths are
+// one continuous thread for the whole page, and their dashes are driven
+// by the site-thread system (site-thread.ts). apply(p) drives DOM
+// choreography only; the DOM windows are unchanged from Phase 4, so p = 1
+// still equals the approved static (minus the removed E2EE seal coil and
+// Sheet Store loop, which were thread paths, not DOM).
 //
 // The Round 6 dash invariant and the round-8 CTM scale fix live in
 // dashSetter (unchanged): strokeDasharray "<visible> <length>", offset 0,
 // "none" at completion, dash scaled by the live CTM because
 // vector-effect: non-scaling-stroke makes Chromium apply dashes in screen
-// units.
+// units. dashSetter stays exported for the site-thread system, which is
+// its only caller now.
 //
 // p = 1 MUST equal the approved static exactly. Every animated property
 // is an inline style / CSS variable whose removal restores the authored
@@ -133,48 +141,6 @@ const setTransform = (el: Element | null | undefined, value: string, done: boole
   setProp(el, "transform", done ? null : value);
 };
 
-// --- Thread plans -------------------------------------------------------
-// One ordered path list per variant, in travel order, with the global-p
-// window each path draws in. Windows are authored (not purely
-// proportional) so the thread aligns with the structural beats: the Sheet
-// Store melody runs p 0.32-0.62 (the note-flash window), the Piano H dip
-// sits inside the entry path so the belt reaches H just before the H-press
-// window (0.22-0.32), and the E2EE seal coil (0.44-0.68) coincides with
-// the core-plate assembly (0.45-0.65).
-interface ThreadPlan {
-  desktop: SVGPathElement[];
-  mobile: SVGPathElement[];
-  desktopWindows: [number, number][];
-  mobileWindows: [number, number][];
-  end: number;
-  dotDesktop: SVGCircleElement | null;
-  dotMobile: SVGCircleElement | null;
-}
-
-const svgPaths = (
-  stage: HTMLElement,
-  layer: "thread-back" | "thread-front",
-  variant: "desktop" | "mobile",
-) => [...stage.querySelectorAll<SVGPathElement>(`svg[data-variant="${variant}"][data-layer="${layer}"] .project-thread-path`)];
-const svgDot = (stage: HTMLElement, variant: "desktop" | "mobile") =>
-  stage.querySelector<SVGCircleElement>(
-    `svg[data-variant="${variant}"][data-layer="thread-front"] .project-thread-dot--end`,
-  );
-
-const applyThread = (plan: ThreadPlan, p: number) => {
-  const mobile = window.innerWidth <= 700;
-  const paths = mobile ? plan.mobile : plan.desktop;
-  const windows = mobile ? plan.mobileWindows : plan.desktopWindows;
-  paths.forEach((path, i) => {
-    const w = windows[i];
-    if (!w) return;
-    dashSetter(path)(win(p, w[0], w[1]));
-  });
-  // End dot fades in as the exit path completes.
-  const dot = mobile ? plan.dotMobile : plan.dotDesktop;
-  if (dot) setOpacity(dot, win(p, plan.end - 0.03, plan.end + 0.02));
-};
-
 // --- Key lighting -------------------------------------------------------
 // Piano keys keep their lit classes in the markup; apply() overrides the
 // authored values with inline styles until the press/hold window
@@ -250,38 +216,9 @@ const buildE2EE = (stage: HTMLElement) => {
   const noise = q<HTMLElement>('[data-el="e2ee-noise-label"]');
   const signal = q<HTMLElement>('[data-el="e2ee-signal-label"]');
   const relayLabel = q<HTMLElement>('[data-el="e2ee-relay-label"]');
-  const frontD = svgPaths(stage, "thread-front", "desktop");
-  const backD = svgPaths(stage, "thread-back", "desktop");
-  const frontM = svgPaths(stage, "thread-front", "mobile");
-  const backM = svgPaths(stage, "thread-back", "mobile");
-  const thread: ThreadPlan = {
-    // Travel order: front entry -> back behind frame 2 -> front in front
-    // of frame 3 -> back behind frame 4 -> seal coil -> front exit.
-    desktop: [frontD[0]!, backD[0]!, frontD[1]!, backD[1]!, frontD[2]!, frontD[3]!],
-    // Mobile: front entry -> back behind frame 2 -> S-coil seal -> exit.
-    mobile: [frontM[0]!, backM[0]!, frontM[1]!, frontM[2]!],
-    desktopWindows: [
-      [0, 0.12],
-      [0.12, 0.22],
-      [0.22, 0.34],
-      [0.34, 0.44],
-      [0.44, 0.68],
-      [0.68, 0.8],
-    ],
-    mobileWindows: [
-      [0, 0.3],
-      [0.3, 0.42],
-      [0.42, 0.68],
-      [0.68, 0.8],
-    ],
-    end: 0.8,
-    dotDesktop: svgDot(stage, "desktop"),
-    dotMobile: svgDot(stage, "mobile"),
-  };
 
   return (p: number) => {
     const mobile = window.innerWidth <= 700;
-    applyThread(thread, p);
     // Frames converge (start offset outward ~10px x, opacity 0.55) p 0.05-0.45.
     const tFrames = win(p, 0.05, 0.45);
     const deltas = mobile ? [-8, -4, 8, 0] : [-10, -5, 5, 10];
@@ -334,38 +271,9 @@ const buildSheet = (stage: HTMLElement) => {
   const fig = q<HTMLElement>('[data-el="sheet-fig"]');
   const trending = q<HTMLElement>('[data-el="sheet-trending-label"]');
   const dataLabel = q<HTMLElement>('[data-el="sheet-data-label"]');
-  const frontD = svgPaths(stage, "thread-front", "desktop");
-  const backD = svgPaths(stage, "thread-back", "desktop");
-  const frontM = svgPaths(stage, "thread-front", "mobile");
-  const backM = svgPaths(stage, "thread-back", "mobile");
-  const thread: ThreadPlan = {
-    // Travel order: front entry across the fan top to the play-button
-    // hairpin -> back down to melody start -> front melody through the 8
-    // staff note heads -> front descent to key 14 -> front exit.
-    desktop: [frontD[0]!, backD[0]!, frontD[1]!, frontD[2]!, frontD[3]!],
-    mobile: [frontM[0]!, backM[0]!, frontM[1]!, frontM[2]!, frontM[3]!],
-    desktopWindows: [
-      [0, 0.2],
-      [0.2, 0.32],
-      [0.32, 0.62],
-      [0.62, 0.78],
-      [0.78, 0.86],
-    ],
-    mobileWindows: [
-      [0, 0.2],
-      [0.2, 0.32],
-      [0.32, 0.62],
-      [0.62, 0.78],
-      [0.78, 0.86],
-    ],
-    end: 0.86,
-    dotDesktop: svgDot(stage, "desktop"),
-    dotMobile: svgDot(stage, "mobile"),
-  };
 
   return (p: number) => {
     const mobile = window.innerWidth <= 700;
-    applyThread(thread, p);
     // Fan cards fan out (rotation 0 -> authored, scale 0.99/0.98 ->
     // authored, y +10 -> 0) p 0.05-0.4; mobile deck tabs fade in with it.
     const tFan = win(p, 0.05, 0.4);
@@ -427,33 +335,8 @@ const buildPiano = (stage: HTMLElement) => {
   const song = q<HTMLElement>('[data-el="piano-song-label"]');
   const lp = q<HTMLElement>('[data-el="piano-lp-label"]');
   const plate = q<HTMLElement>('[data-el="piano-plate"]');
-  const frontD = svgPaths(stage, "thread-front", "desktop");
-  const backD = svgPaths(stage, "thread-back", "desktop");
-  const frontM = svgPaths(stage, "thread-front", "mobile");
-  const backM = svgPaths(stage, "thread-back", "mobile");
-  const thread: ThreadPlan = {
-    // Travel order: front entry -> H dip -> back under bridge -> front
-    // L dip -> exit. Mobile: front down the left edge / across the mid
-    // tier / down the right edge, back behind the front tier.
-    desktop: [frontD[0]!, backD[0]!, frontD[1]!],
-    mobile: [frontM[0]!, backM[0]!, frontM[1]!],
-    desktopWindows: [
-      [0, 0.3],
-      [0.3, 0.42],
-      [0.42, 0.85],
-    ],
-    mobileWindows: [
-      [0, 0.5],
-      [0.5, 0.65],
-      [0.65, 0.85],
-    ],
-    end: 0.85,
-    dotDesktop: svgDot(stage, "desktop"),
-    dotMobile: svgDot(stage, "mobile"),
-  };
 
   return (p: number) => {
-    applyThread(thread, p);
     // Machine container settles into place p 0-0.25. Desktop: from above
     // (y -14 -> 0). The spec's +14 rise from below cannot be used: at
     // p = 0 it pushes the back tier down onto the belt (topTier clearance

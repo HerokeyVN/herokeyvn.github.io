@@ -25,50 +25,6 @@ const { project } = Astro.props;
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
-// Proper-crossing count between non-adjacent segments of a polyline.
-// Build-time diagnostic for the small E2EE seal coil (target >= 2).
-type Pt = { x: number; y: number };
-const countCrossings = (pts: Pt[]) => {
-  const orient = (a: Pt, b: Pt, c: Pt) =>
-    Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
-  let n = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    for (let j = i + 2; j < pts.length - 1; j++) {
-      if (i === 0 && j === pts.length - 2) continue;
-      const a = pts[i]!;
-      const b = pts[i + 1]!;
-      const c = pts[j]!;
-      const e = pts[j + 1]!;
-      const o1 = orient(a, b, c);
-      const o2 = orient(a, b, e);
-      const o3 = orient(c, e, a);
-      const o4 = orient(c, e, b);
-      if (o1 !== o2 && o3 !== o4) n++;
-    }
-  }
-  return n;
-};
-
-// Small dense coil: one period of a perturbed 3:2 Lissajous figure. Used
-// ONLY as the compact seal inside the E2EE core (a seal, not an orbital).
-// t runs pi/2..5pi/2 so the loop starts and ends at the leftmost point.
-const knotPath = (cx: number, cy: number, A: number, B: number, A2: number, B2: number) => {
-  const N = 240;
-  const pts: Pt[] = [];
-  for (let i = 0; i <= N; i++) {
-    const t = Math.PI / 2 + (2 * Math.PI * i) / N;
-    pts.push({
-      x: r1(cx + A * Math.sin(3 * t) + A2 * Math.cos(7 * t)),
-      y: r1(cy + B * Math.sin(2 * t) + B2 * Math.cos(5 * t)),
-    });
-  }
-  let d = "";
-  pts.forEach((p, i) => {
-    d += (i === 0 ? `M ${p.x} ${p.y}` : ` L ${p.x} ${p.y}`);
-  });
-  return { d, crossings: countCrossings(pts) };
-};
-
 // Smooth curve through points (Catmull-Rom to Bezier). Used for the Sheet
 // Store melody line through its staff notes.
 type MelodyNote = { x: number; y: number };
@@ -95,36 +51,51 @@ const melodyPath = (notes: MelodyNote[]) => {
 // thickness); giant "HELLO" behind it in solid -> outlined -> solid
 // letterforms (readable -> protected -> readable); the sealed core (3
 // glass plates of distinct materials) at centre-right carries the readable
-// message itself, ringed by the red Lissajous seal; the filament enters
-// left, coils once inside the core, exits right. Frames 1 and 3 sit in the
+// message itself, ringed by the red seal ring; the thread enters left,
+// runs straight through the sealed core under the message (a shallow
+// G1 dip, flat at y 304, so the HELLO stays fully readable), and exits
+// right. Frames 1 and 3 sit in the
 // mid layer (thread passes in front of them); frames 2 and 4 sit in the
 // foreground layer (thread passes behind them). Mobile 560x560: vertical
 // corridor, frames stacked, thread top -> bottom.
-const E2EE_COIL = knotPath(756, 280, 52, 46, 6, 5);
-console.log(`[motif] E2EE seal coil crossings desktop=${E2EE_COIL.crossings}`);
 // Thread segments, desktop (y = 280). Front/back split at the frame edges:
 // frame1 x 18-171, frame2 x 216-351, frame3 x 414-549, frame4 x 576-711.
 const E2EE_BACK_D = [
   "M 216 280 L 351 280", // behind frame 2
-  "M 576 280 L 714 280", // behind frame 4, into the coil
+  "M 576 280 L 714 280", // behind frame 4, into the core
 ];
 const E2EE_FRONT_D = [
-  "M 0 280 C 72 272, 144 288, 216 280", // in front of frame 1
-  "M 351 280 C 426 288, 501 272, 576 280", // in front of frame 3
-  E2EE_COIL.d, // the seal, inside the core
-  "M 714 280 C 776 272, 838 288, 900 280", // out of the core to the exit
+  // Round 12 integration: each front wave is TWO cubics with horizontal
+  // end tangents, so the wave meets the straight back segments G1 (0deg)
+  // at both seams. A single cubic cannot wave with horizontal end
+  // tangents (both control-point y values would have to equal 280,
+  // collapsing it to a straight line); the old single cubics met the
+  // back segments at ~6deg. Shape preserved: front-1 rises then falls,
+  // front-3 falls then rises, amplitude ~3px, same as before.
+  "M 0 280 C 36 280, 72 272, 108 280 C 144 288, 180 280, 216 280", // in front of frame 1
+  "M 351 280 C 387 280, 423 288, 459 280 C 495 272, 540 280, 576 280", // in front of frame 3
+  // Straight through the sealed core: a shallow G1 dip under the message
+  // (descent + flat + rise, min radius 12.3). A straight y=280 line would
+  // strike the HELLO ink across all five letters (92/201 canvas samples);
+  // the dip keeps the thread below the ink (bottom 290) at y 304, crossing
+  // only the lower-left strokes of E at entry (the entry point 714,280
+  // sits mid-E, so ~25 units of contact there is unavoidable) and passing
+  // through the seal ring's lower arcs on its way out.
+  "M 714 280 C 734 280, 742 304, 764 304 L 856 304 C 872 304, 886 280, 900 280",
 ];
 // Thread segments, mobile (x = 280). Frames stacked: f1 y 202-258 (mid),
 // f2 y 280-336 (foreground), f3 y 358-414 (mid). The behind-segment runs
-// behind f2, the only foreground frame on mobile. The seal is a vertical
-// S-coil, so the thread enters at the top and exits at the bottom.
+// behind f2, the only foreground frame on mobile. The through-route jogs
+// right around the sealed message (a straight x=280 line would graze the
+// middle L's stem; the jog to x=348 clears the ink entirely) and returns
+// to the centre line for the bottom exit.
 const E2EE_BACK_D_MOBILE = [
   "M 280 280 L 280 336", // behind frame 2
 ];
 const E2EE_FRONT_D_MOBILE = [
   "M 280 0 L 280 280", // in front of the letters and frame 1
-  "M 280 336 L 280 420 C 280 445, 262 455, 280 470 C 298 485, 280 495, 280 520", // S-coil seal, gentle weave (round 11: was a tight S with 62.8deg kinks at both ends)
-  "M 280 520 L 280 560",
+  "M 280 336 L 280 440 C 280 462, 348 448, 348 472 L 348 500 C 348 520, 280 514, 280 534", // jog right around the sealed message, back to the centre line
+  "M 280 534 L 280 560",
 ];
 
 // ------------------------------------------------------- Sky Sheet Store
@@ -268,11 +239,11 @@ const PIANO_FRONT_D_MOBILE = [
     </div>
 
     <svg class="project-thread-svg project-thread-svg--front project-thread-svg--desktop" data-layer="thread-front" data-variant="desktop" viewBox="0 0 900 560" aria-hidden="true">
-      {E2EE_FRONT_D.map((d, i) => (<path class="project-thread-path" data-el={i === 2 ? "e2ee-seal" : undefined} d={d}></path>))}
+      {E2EE_FRONT_D.map((d) => (<path class="project-thread-path" d={d}></path>))}
       <circle class="project-thread-dot project-thread-dot--end" cx="896" cy="280" r="4"></circle>
     </svg>
     <svg class="project-thread-svg project-thread-svg--front project-thread-svg--mobile" data-layer="thread-front" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
-      {E2EE_FRONT_D_MOBILE.map((d, i) => (<path class="project-thread-path" data-el={i === 1 ? "e2ee-seal" : undefined} d={d}></path>))}
+      {E2EE_FRONT_D_MOBILE.map((d) => (<path class="project-thread-path" d={d}></path>))}
       <circle class="project-thread-dot project-thread-dot--end" cx="280" cy="556" r="4"></circle>
     </svg>
 
@@ -341,11 +312,22 @@ const PIANO_FRONT_D_MOBILE = [
       </div>
     </div>
 
+    {/* Round 12: one clean connector from the play-button area down to
+        the melody start (note 0). Two cubic segments in one path element:
+        the dive from the panel, then a shallow scoop under the staff that
+        rises into note 0. A single G1 cubic is geometrically impossible
+        here - the route must reverse x-direction (left from the panel,
+        then right into the melody) and every single-cubic variant
+        collapses to a near-cusp at the tail (best analytic min radius
+        0.85 desktop / 1.59 mobile, vs 10.7 / 11.5 for this two-segment
+        form). No hook, no loop. Desktop clears the featured card by 24,
+        its shadow by 8.7, Open Player by 29, and the practice strip by
+        12.6; mobile clears the practice header by 3.6 and the grid by 8.5. */}
     <svg class="project-thread-svg project-thread-svg--back project-thread-svg--desktop" data-layer="thread-back" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 1192 104 C 1144 150, 1080 290, 960 340 C 864 380, 800 340, 760 372 C 730 396, 768 399, 806 396"></path>
+      <path class="project-thread-path" d="M 1192 104 C 916.5 365.8, 878.3 366.7, 850 395 C 786.4 458.6, 776.1 398.4, 806 396"></path>
     </svg>
     <svg class="project-thread-svg project-thread-svg--back project-thread-svg--mobile" data-layer="thread-back" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 185 300 C 185 345, 40 310, 40 355 C 40 368, 44 381, 56 380"></path>
+      <path class="project-thread-path" d="M 185 300 C 185 340, 95 340, 35 340 C 15 340, 15 382.7, 56 380"></path>
     </svg>
 
     <div class="layer layer--fg" data-layer="fg">
@@ -518,7 +500,8 @@ const PIANO_FRONT_D_MOBILE = [
   /* Plates are three distinct materials: matte back, mid-tone middle,
      front glass with a top-light gradient and a drop shadow that lifts it
      off the stack. The sealed message sits on the front plate with the
-     red seal ring and the Lissajous coil (thread-front SVG) over it. */
+     red seal ring over it; the thread dips under the message through the
+     core (thread-front SVG). */
   .e2ee-plate { position: absolute; inset: 0; border: 1px solid rgba(239, 237, 230, 0.1); border-radius: 6px; }
   .e2ee-plate--back { background: #0a0a0d; }
   .e2ee-plate--mid { transform: translate(4%, 6%); background: rgba(20, 20, 24, 0.85); }
@@ -688,8 +671,9 @@ const PIANO_FRONT_D_MOBILE = [
     .fig-label { font-size: 10px; font-size: 1.79cqw; }
     .mono-label { font-size: 9px; font-size: 1.61cqw; }
 
-    /* E2EE mobile: vertical corridor. Frames stack; the seal coil sits in
-       the core at the bottom; the thread runs top -> bottom. */
+    /* E2EE mobile: vertical corridor. Frames stack; the sealed core sits
+       at the bottom; the thread runs top -> bottom, jogging right around
+       the message. */
     .e2ee-word { left: 5%; top: 4%; width: 90%; font-size: 16cqw; }
     .e2ee-filament { display: none; }
     .e2ee-frame--1 { left: 30%; top: 36%; width: 40%; height: 10%; transform: translateY(var(--frame-y, 0px)); }

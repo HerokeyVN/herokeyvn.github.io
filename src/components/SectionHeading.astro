@@ -5,9 +5,13 @@ interface Props {
   eyebrow: string;
   title: string;
   italicWord?: string;
+  // Round 12: when true, the italic (outlined) word is split into per-char
+  // spans so the site thread can trace its outlines like the About glyphs.
+  // Only the Experience heading sets this; other headings are untouched.
+  traceItalic?: boolean;
 }
 
-const { id, index, eyebrow, title, italicWord } = Astro.props;
+const { id, index, eyebrow, title, italicWord, traceItalic } = Astro.props;
 ---
 
 <header class="section-heading" data-reveal data-display-heading>
@@ -18,7 +22,29 @@ const { id, index, eyebrow, title, italicWord } = Astro.props;
   </div>
   <h2 id={id} class="section-heading__title">
     {title}
-    {italicWord && <em> {italicWord}</em>}
+    {italicWord && (
+      <em>
+        {" "}
+        {traceItalic ? (
+          italicWord
+            .trim()
+            .split(" ")
+            .map((word, wordIndex) => (
+              <>
+                <span class="exp__trace-word" data-exp-glyph-word={wordIndex}>
+                  {[...word.toUpperCase()].map((char, charIndex) => (
+                    <span class="exp__glyph" data-exp-glyph-key={`exp-${wordIndex}-${charIndex}`} data-exp-glyph-char={char}>{char}</span>
+                  ))}
+                  <span class="exp__glyph-baseline" data-exp-glyph-baseline={wordIndex} aria-hidden="true"></span>
+                </span>
+                {wordIndex < italicWord.trim().split(" ").length - 1 && " "}
+              </>
+            ))
+        ) : (
+          italicWord
+        )}
+      </em>
+    )}
   </h2>
 </header>
 
@@ -70,6 +96,10 @@ const { id, index, eyebrow, title, italicWord } = Astro.props;
     color: transparent;
     -webkit-text-stroke: 1px rgba(239, 237, 230, 0.55);
   }
+
+  .exp__trace-word { white-space: nowrap; }
+  .exp__glyph { display: inline; }
+  .exp__glyph-baseline { display: inline-block; width: 0; height: 0; overflow: hidden; line-height: 0; vertical-align: baseline; }
 
   @media (max-width: 768px) {
     .section-heading {

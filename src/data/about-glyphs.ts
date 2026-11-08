@@ -8,6 +8,11 @@ export const ABOUT_GLYPHS: Record<string, { advance: number; contours: string[] 
   D: { advance: 879, contours: ["M77-647L447-647Q556-647 629-621Q702-595 745.50-550.50Q789-506 807.50-448Q826-390 826-326L826-326Q826-262 805.50-203Q785-144 740.50-98.50Q696-53 623.50-26.50Q551 0 447 0L447 0L77 0L77-647Z", "M210-533L210-114L444-114Q516-114 563.50-131.50Q611-149 639-179Q667-209 679-247Q691-285 691-326L691-326Q691-367 679-404Q667-441 639-470Q611-499 563.50-516Q516-533 444-533L444-533L210-533Z"] },
   O: { advance: 924, contours: ["M462 13L462 13Q333 13 241.50-27.50Q150-68 101.50-143Q53-218 53-323L53-323Q53-429 101.50-504Q150-579 241.50-619.50Q333-660 462-660L462-660Q592-660 683-619.50Q774-579 822.50-504Q871-429 871-323L871-323Q871-218 822.50-143Q774-68 683-27.50Q592 13 462 13Z", "M462-102L462-102Q542-102 602.50-126Q663-150 697.50-199Q732-248 732-323L732-323Q732-398 697.50-447Q663-496 602.50-520.50Q542-545 462-545L462-545Q383-545 321-520.50Q259-496 224-447Q189-398 189-323L189-323Q189-248 224-199Q259-150 321-126Q383-102 462-102Z"] },
   N: { advance: 901, contours: ["M210-647L691-173L691-647L824-647L824 0L691 0L210-470L210 0L77 0L77-647L210-647Z"] },
+  M: { advance: 1099, contours: ["M549-115L889-647L1022-647L1022 0L889 0L889-411L624 0L475 0L210-410L210 0L77 0L77-647L210-647Z"] },
+  I: { advance: 324, contours: ["M96-647L229-647L229 0L96 0Z"] },
+  F: { advance: 741, contours: ["M708-647L708-536L210-536L210-362L618-362L618-258L210-258L210 0L77 0L77-647Z"] },
+  A: { advance: 789, contours: ["M17 0L321-647L465-647L772 0L627 0L563-141L225-141L161 0Z", "M512-252L393-513L275-252Z"] },
+  C: { advance: 885, contours: ["M832-233Q823-155 777-100Q731-45 652-16Q573 13 464 13Q373 13 297.50-8Q222-29 167.50-71Q113-113 83-175.50Q53-238 53-322Q53-406 83-469Q113-532 167.50-574.50Q222-617 297.50-638.50Q373-660 464-660Q573-660 652.50-630Q732-600 778-544.50Q824-489 832-410L700-410Q687-452 656.50-482.50Q626-513 578-529Q530-545 464-545Q382-545 320-519.50Q258-494 224-444.50Q190-395 190-322Q190-250 224-201Q258-152 320-126.50Q382-101 464-101Q530-101 577.50-117Q625-133 655.50-163Q686-193 700-233Z"] },
   "'": { advance: 230, contours: ["M191-567L149-443L80-443L39-567L39-653L191-653L191-567Z"] },
   T: { advance: 722, contours: ["M20-536L20-647L702-647L702-536L428-536L428 0L295 0L295-536L20-536Z"] },
   ".": { advance: 271, contours: ["M60-114L211-114L211 0L60 0L60-114Z"] },
@@ -96,3 +101,72 @@ export function findTransition(fromKey: string, toKey: string, isMobile: boolean
     return true;
   });
 }
+
+// Round 12: the outlined Experience headline ("meets infrastructure.") is
+// traced the same way as the About glyphs. Keys are "exp-{word}-{char}";
+// the words are the em's words in reading order. M, I, F, A, C contours
+// were extracted from the same @fontsource/syne Syne 700 Latin WOFF as
+// the About contours (fontTools SVGPathPen, y negated, 1000 units per em);
+// every other letter reuses the About contour above.
+export const EXP_TRACE_WORDS = ["MEETS", "INFRASTRUCTURE."] as const;
+
+export const EXP_GLYPH_INSTANCES = EXP_TRACE_WORDS.flatMap((word, wordIndex) =>
+  [...word].map((char, charIndex) => ({ key: `exp-${wordIndex}-${charIndex}`, char, contours: ABOUT_GLYPHS[char]!.contours })),
+);
+
+export const EXP_GLYPH_TRANSITIONS: GlyphTransition[] = [
+  // Pair 1 in MEETS: E (exp-0-1) -> E (exp-0-2), same side points as the
+  // About double-E pair (bottom arm right edge -> left spine, y ~ -84).
+  {
+    from: "exp-0-1",
+    to: "exp-0-2",
+    visibility: "visible",
+    fromAnchor: { mode: "fraction", fraction: 30 / 120 },
+    toAnchor: { mode: "fraction", fraction: 52 / 120 },
+    desktop: true,
+    mobile: true,
+  },
+  // Pair 2 in INFRASTRUCTURE.: N (exp-1-1) -> F (exp-1-2), right spine ->
+  // left spine at y ~ -320 (fractions measured from the flattened
+  // contours: N (824, -321), F (77, -316)).
+  {
+    from: "exp-1-1",
+    to: "exp-1-2",
+    visibility: "visible",
+    fromAnchor: { mode: "fraction", fraction: 0.3906 },
+    toAnchor: { mode: "fraction", fraction: 0.7147 },
+    desktop: true,
+    mobile: true,
+  },
+  // Pair 3 in INFRASTRUCTURE.: R (exp-1-3) -> A (exp-1-4), bowl right ->
+  // left leg at y ~ -451 (R (764, -451), A (226.8, -446.5)).
+  {
+    from: "exp-1-3",
+    to: "exp-1-4",
+    visibility: "visible",
+    fromAnchor: { mode: "fraction", fraction: 0.4939 },
+    toAnchor: { mode: "fraction", fraction: 0.1964 },
+    desktop: true,
+    mobile: true,
+  },
+];
+
+export function findExpTransition(fromKey: string, toKey: string, isMobile: boolean): GlyphTransition | undefined {
+  return EXP_GLYPH_TRANSITIONS.find((t) => {
+    if (t.from !== fromKey || t.to !== toKey) return false;
+    if (isMobile && t.mobile === false) return false;
+    if (!isMobile && t.desktop === false) return false;
+    return true;
+  });
+}
+
+// Round 12: the site-1 exit leaves from the last traced glyph's top-right
+// corner, so the contour departure heads straight down. Which glyph is
+// last depends on the rendered line count: "." (2-3) on two/three lines,
+// "U" (0-0) when the whole phrase fits one line (1280). "." perimeter is
+// 530 units with the corner 151 along; "U" perimeter is ~3472.1 units
+// with its right-stem top corner 494 along.
+export const ABOUT_EXIT_JUNCTION_FRACTIONS: Record<string, number> = {
+  "2-3": 151 / 530,
+  "0-0": 494 / 3472.12,
+};

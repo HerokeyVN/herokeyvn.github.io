@@ -11,6 +11,7 @@ import SectionHeading from "./SectionHeading.astro";
       eyebrow="Professional Track"
       title="Working where identity"
       italicWord="meets infrastructure."
+      traceItalic
     />
 
     <article class="experience__dossier" data-reveal>
@@ -25,11 +26,11 @@ import SectionHeading from "./SectionHeading.astro";
         <div class="progression-timeline">
           <span class="timeline-title">Career Milestones</span>
           <ol class="timeline-steps">
-            {experience.progression.map((step) => {
+            {experience.progression.map((step, index) => {
               const [role, dates] = step.split(" · ");
               return (
                 <li class="timeline-step">
-                  <span class="step-marker" aria-hidden="true"></span>
+                  <span class="step-marker" aria-hidden="true">0{index + 1}</span>
                   <div class="step-info">
                     <strong class="step-role">{role}</strong>
                     <span class="step-dates">{dates}</span>
@@ -145,14 +146,24 @@ import SectionHeading from "./SectionHeading.astro";
     align-items: flex-start;
   }
 
+  /* Numbered node: the marker is a 20px disc with the mono milestone
+     number inside, centred on the same point as the old 10px dot
+     (centre x = steps left + 5, on the CSS timeline line). The site
+     thread passes through the centre, so the node sits ON the thread. */
   .step-marker {
     position: absolute;
-    left: -1.25rem;
-    top: 5px;
-    width: 10px;
-    height: 10px;
+    left: -1.5625rem;
+    top: 0;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: var(--accent-red);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 600;
+    line-height: 20px;
+    text-align: center;
   }
 
   .step-info {

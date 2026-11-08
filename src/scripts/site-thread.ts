@@ -1,6 +1,7 @@
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { findTransition, type AnchorPreference, type GlyphTransition } from "../data/about-glyphs";
+import { dashSetter } from "./project-threads";
+import { ABOUT_EXIT_JUNCTION_FRACTIONS, findExpTransition, findTransition, type AnchorPreference, type GlyphTransition } from "../data/about-glyphs";
 
 type Segment = {
   element?: SVGPathElement;
@@ -11,10 +12,105 @@ type Segment = {
   layer: "site" | "glyph";
   startScroll: number;
   endScroll: number;
+  // Round 12: stage paths are driven by the CTM-scaled dashSetter
+  // (round-8 fix) instead of the site thread's user-unit dash, because
+  // their SVGs use vector-effect: non-scaling-stroke.
+  setDash?: (progress: number) => void;
+  // Round 12: a stage path on the thread-back layer runs behind a
+  // foreground structure; the head dot hides while it draws, so the dot
+  // never floats over a frame the thread passes behind.
+  occluded?: boolean;
 };
 type Junction = { x: number; y: number; distance: number };
 type GlyphRecord = { key: string; left: number; top: number; baselineY: number; scale: number; paths: SVGPathElement[]; junctions: Junction[]; lineIndex: number };
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+// Round 12: per-scene stage geometry for the unified thread. Entry/exit
+// points and travel orders are B's anchor contract
+// (docs/round-12-project-anchors.md); the p-windows are the Phase 4
+// ThreadPlan windows, with the deleted E2EE coil window merged into the
+// through-path (desktop [0.44, 0.8]) so the thread seals the core while
+// the plates assemble, and the mobile jog drawing in the old S-coil
+// window ([0.42, 0.68]). Desktop entries/exits run east, mobile
+// entries/exits run south (top -> bottom corridors).
+type StagePlan = {
+  vbW: number; vbH: number;
+  entry: [number, number]; exit: [number, number];
+  order: [("front" | "back"), number][];
+  windows: [number, number][];
+  dotEnd: number;
+};
+const STAGE_PLANS: Record<string, { desktop: StagePlan; mobile: StagePlan }> = {
+  "fb-messenger-e2ee": {
+    desktop: {
+      vbW: 900, vbH: 560, entry: [0, 280], exit: [900, 280],
+      order: [["front", 0], ["back", 0], ["front", 1], ["back", 1], ["front", 2]],
+      windows: [[0, 0.12], [0.12, 0.22], [0.22, 0.34], [0.34, 0.44], [0.44, 0.8]],
+      dotEnd: 0.8,
+    },
+    mobile: {
+      vbW: 560, vbH: 560, entry: [280, 0], exit: [280, 560],
+      order: [["front", 0], ["back", 0], ["front", 1], ["front", 2]],
+      windows: [[0, 0.3], [0.3, 0.42], [0.42, 0.68], [0.68, 0.8]],
+      dotEnd: 0.8,
+    },
+  },
+  "sky-sheet-store": {
+    desktop: {
+      vbW: 1440, vbH: 560, entry: [0, 68], exit: [1440, 522],
+      order: [["front", 0], ["back", 0], ["front", 1], ["front", 2], ["front", 3]],
+      windows: [[0, 0.2], [0.2, 0.32], [0.32, 0.62], [0.62, 0.78], [0.78, 0.86]],
+      dotEnd: 0.86,
+    },
+    mobile: {
+      vbW: 560, vbH: 560, entry: [34, 0], exit: [484, 560],
+      order: [["front", 0], ["back", 0], ["front", 1], ["front", 2], ["front", 3]],
+      windows: [[0, 0.2], [0.2, 0.32], [0.32, 0.62], [0.62, 0.78], [0.78, 0.86]],
+      dotEnd: 0.86,
+    },
+  },
+  "sky-auto-piano": {
+    desktop: {
+      vbW: 900, vbH: 560, entry: [0, 250], exit: [900, 250],
+      order: [["front", 0], ["back", 0], ["front", 1]],
+      windows: [[0, 0.3], [0.3, 0.42], [0.42, 0.85]],
+      dotEnd: 0.85,
+    },
+    mobile: {
+      vbW: 560, vbH: 560, entry: [30, 0], exit: [500, 560],
+      order: [["front", 0], ["back", 0], ["front", 1]],
+      windows: [[0, 0.5], [0.5, 0.65], [0.65, 0.85]],
+      dotEnd: 0.85,
+    },
+  },
+};
+
+type RouteDir = "N" | "E" | "S" | "W";
+const ROUTE_DIR_V: Record<RouteDir, { x: number; y: number }> = {
+  N: { x: 0, y: -1 }, E: { x: 1, y: 0 }, S: { x: 0, y: 1 }, W: { x: -1, y: 0 },
+};
+// Minimal path builder for the site-space project connectors: straight
+// runs and quarter-turn cubics only, so every joint is G1 by
+// construction. A 90deg turn from heading u to heading v ends at
+// start + u*r + v*r, with control points 0.5523*r along each tangent.
+const makeRoute = (startX: number, startY: number, startDir: RouteDir) => {
+  let d = `M ${startX} ${startY}`;
+  let x = startX, y = startY, dir = startDir;
+  return {
+    lineTo(nx: number, ny: number) { d += ` L ${nx} ${ny}`; x = nx; y = ny; },
+    turn(to: RouteDir, r: number) {
+      const u = ROUTE_DIR_V[dir], v = ROUTE_DIR_V[to];
+      const k = 0.5523 * r;
+      const ex = x + u.x * r + v.x * r, ey = y + u.y * r + v.y * r;
+      d += ` C ${x + u.x * k} ${y + u.y * k}, ${ex - v.x * k} ${ey - v.y * k}, ${ex} ${ey}`;
+      x = ex; y = ey; dir = to;
+    },
+    get d() { return d; },
+    get x() { return x; },
+    get y() { return y; },
+    get dir() { return dir; },
+  };
+};
 
 export function initSiteThread() {
   const svg = document.querySelector<SVGSVGElement>("[data-site-thread]");
@@ -28,6 +124,21 @@ export function initSiteThread() {
   gsap.registerPlugin(ScrollTrigger);
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let segments: Segment[] = [];
+  // Round 12: one entry per project stage, for the end-dot fade (the dot
+  // fades in as the stage's exit path completes, exactly as the old
+  // per-project applyThread did; before that it stays hidden so no dot
+  // floats at a stage exit the thread has not reached).
+  let stageDots: { dot: SVGCircleElement | null; artStart: number; artEnd: number; dotEnd: number }[] = [];
+  const updateStageDots = (currentScroll: number, forceFull = false) => {
+    for (const { dot, artStart, artEnd, dotEnd } of stageDots) {
+      if (!dot) continue;
+      if (forceFull) { dot.style.removeProperty("opacity"); continue; }
+      const p = gsap.utils.clamp(0, 1, (currentScroll - artStart) / (artEnd - artStart));
+      const t = gsap.utils.clamp(0, 1, (p - (dotEnd - 0.03)) / 0.05);
+      if (t >= 1) dot.style.removeProperty("opacity");
+      else dot.style.setProperty("opacity", String(t));
+    }
+  };
   let resizeFrame = 0;
   let trigger: ScrollTrigger | undefined;
   let s0 = 0;
@@ -35,8 +146,31 @@ export function initSiteThread() {
   let sGlyphStart = 0;
   let s2 = 0;
 
-  const topOf = (selector: string) => { const el = document.querySelector<HTMLElement>(selector); return el ? el.getBoundingClientRect().top + scrollY : 0; };
-  const botOf = (selector: string) => { const el = document.querySelector<HTMLElement>(selector); return el ? el.getBoundingClientRect().bottom + scrollY : 0; };
+  // Document-space box with reveal offsets removed. Reveal tweens
+  // (motion.ts) translate [data-reveal] ancestors by up to 34px until
+  // they play; getBoundingClientRect includes that offset, so geometry
+  // measured at load would go stale by the offset once the reveal
+  // completes (mobile Experience heading: +34px at load, 0 after play;
+  // mobile statement: +22px). Subtracting the pure translate of every
+  // ancestor measures final layout coordinates at any point in the
+  // animation, because the rendered rect always carries the current
+  // offset. (Where no reveal applies, e.g. desktop, this is a no-op.)
+  const docBox = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    let dx = 0, dy = 0;
+    let node: Element | null = el;
+    while (node) {
+      const t = getComputedStyle(node).transform;
+      if (t && t !== "none") {
+        const m = new DOMMatrix(t);
+        if (m.a === 1 && m.d === 1 && m.b === 0 && m.c === 0) { dx += m.e; dy += m.f; }
+      }
+      node = node.parentElement;
+    }
+    return { left: r.left + scrollX - dx, right: r.right + scrollX - dx, top: r.top + scrollY - dy, bottom: r.bottom + scrollY - dy };
+  };
+  const topOf = (selector: string) => { const el = document.querySelector<HTMLElement>(selector); return el ? docBox(el).top : 0; };
+  const botOf = (selector: string) => { const el = document.querySelector<HTMLElement>(selector); return el ? docBox(el).bottom : 0; };
   const setTiming = (segment: Segment, start: number, end: number) => { segment.startScroll = start; segment.endScroll = Math.max(start + 1, end); };
 
   const pointInSiteSpace = (element: SVGPathElement, distance: number) => {
@@ -93,6 +227,7 @@ export function initSiteThread() {
     if (reduceMotion.matches) {
       segments.forEach(({ element }) => element && gsap.set(element, { strokeDasharray: "none", strokeDashoffset: 0, visibility: "visible" }));
       gsap.set([siteEnd, glyphEnd], { autoAlpha: 0 });
+      updateStageDots(currentScroll, true);
       svg.setAttribute("data-thread-phase", "glyph");
       return;
     }
@@ -119,6 +254,14 @@ export function initSiteThread() {
       if (progress > 0 && progress < 1) active = { segment, progress };
       if (!segment.element) return;
 
+      // Round 12: stage paths are driven by the CTM-scaled dashSetter
+      // (round-8 fix) instead of the site thread's user-unit dash,
+      // because their SVGs use vector-effect: non-scaling-stroke.
+      if (segment.setDash) {
+        segment.setDash(progress);
+        return;
+      }
+
       const visible = segment.drawLength * progress;
       if (segment.kind === "closed") {
         gsap.set(segment.element, {
@@ -143,7 +286,12 @@ export function initSiteThread() {
       }
     });
 
-    if (!active || active.segment.kind === "hidden" || !active.segment.element) {
+    updateStageDots(currentScroll);
+
+    // The head dot hides while the thread travels behind a foreground
+    // structure (round-12 stage back paths), exactly as the moving marker
+    // hides during hidden glyph travel.
+    if (!active || active.segment.kind === "hidden" || !active.segment.element || active.segment.occluded) {
       gsap.set([siteEnd, glyphEnd], { autoAlpha: 0 });
       return;
     }
@@ -258,74 +406,125 @@ export function initSiteThread() {
     connectorGroup.replaceChildren();
 
     const isMobile = width <= 700;
-    const rawGlyphs: GlyphRecord[] = [...document.querySelectorAll<HTMLElement>(".about__glyph[data-glyph-key]")].map((element) => {
-      const key = element.dataset.glyphKey!;
-      const wordIndex = Number(key.split("-")[0]);
-      const baseline = document.querySelector<HTMLElement>(`[data-glyph-baseline='${wordIndex}']`)!;
-      const box = element.getBoundingClientRect(), baselineBox = baseline.getBoundingClientRect();
-      const scale = Number.parseFloat(getComputedStyle(element).fontSize) / 1000;
-      const originX = box.left + scrollX, baselineY = baselineBox.top + scrollY;
-      const glyphPaths = [...glyphSvg.querySelectorAll<SVGPathElement>(`path[data-glyph-key='${key}']`)].sort((a, b) => Number(a.dataset.glyphContour) - Number(b.dataset.glyphContour));
-      glyphPaths.forEach((path) => path.setAttribute("transform", `translate(${originX} ${baselineY}) scale(${scale})`));
-      return {
-        key,
-        left: originX,
-        top: box.top + scrollY,
-        baselineY,
-        scale,
-        paths: glyphPaths,
-        junctions: [],
-        lineIndex: 0,
-      };
-    });
-    const lines: GlyphRecord[][] = [];
-    [...rawGlyphs].sort((a, b) => a.top - b.top || a.left - b.left).forEach((glyph) => { const line = lines.find((items) => Math.abs(items[0]!.top - glyph.top) < 4); line ? line.push(glyph) : lines.push([glyph]); });
-    lines.forEach((line, lineIndex) => { line.forEach((glyph) => { glyph.lineIndex = lineIndex; }); line.sort((a, b) => a.left - b.left); if (lineIndex % 2 === 0) line.reverse(); });
-    const glyphOrder = lines.flat();
-    if (!glyphOrder.length) return;
+    // Round 12: glyph collection is shared by the About headline and the
+    // Experience headline (same contour/transform/connector mechanism,
+    // different span/path selectors and transition plans).
+    const collectGlyphs = (
+      spanSelector: string,
+      keyAttr: string,
+      keyDataset: "glyphKey" | "expGlyphKey",
+      contourDataset: "glyphContour" | "expGlyphContour",
+      baselineAttr: string,
+      wordPart: number,
+    ): GlyphRecord[] =>
+      [...document.querySelectorAll<HTMLElement>(spanSelector)].map((element) => {
+        const key = element.dataset[keyDataset]!;
+        const wordIndex = Number(key.split("-")[wordPart]);
+        const baseline = document.querySelector<HTMLElement>(`[${baselineAttr}='${wordIndex}']`)!;
+        const box = docBox(element), baselineBox = docBox(baseline);
+        const scale = Number.parseFloat(getComputedStyle(element).fontSize) / 1000;
+        const originX = box.left, baselineY = baselineBox.top;
+        const glyphPaths = [...glyphSvg.querySelectorAll<SVGPathElement>(`path[${keyAttr}='${key}']`)].sort((a, b) => Number(a.dataset[contourDataset]) - Number(b.dataset[contourDataset]));
+        glyphPaths.forEach((path) => path.setAttribute("transform", `translate(${originX} ${baselineY}) scale(${scale})`));
+        return {
+          key,
+          left: originX,
+          top: box.top,
+          baselineY,
+          scale,
+          paths: glyphPaths,
+          junctions: [],
+          lineIndex: 0,
+        };
+      });
+    // Group measured glyphs into rendered lines, resolve each outer
+    // contour's junction, and build the ordered contour/connector/hidden
+    // segments for one headline. `snake` reverses even lines (About);
+    // `lastFractions` overrides the last glyph's junction by key (the
+    // About exit corner: "." on two/three lines, "U" on one line).
+    const buildGlyphGroup = (
+      rawGlyphs: GlyphRecord[],
+      groupFontSize: number,
+      findTrans: (from: string, to: string, isMobile: boolean) => GlyphTransition | undefined,
+      snake: boolean,
+      lastFractions?: Record<string, number>,
+    ): { order: GlyphRecord[]; segments: Segment[] } => {
+      const lines: GlyphRecord[][] = [];
+      [...rawGlyphs].sort((a, b) => a.top - b.top || a.left - b.left).forEach((glyph) => { const line = lines.find((items) => Math.abs(items[0]!.top - glyph.top) < 4); line ? line.push(glyph) : lines.push([glyph]); });
+      lines.forEach((line, lineIndex) => { line.forEach((glyph) => { glyph.lineIndex = lineIndex; }); line.sort((a, b) => a.left - b.left); if (snake && lineIndex % 2 === 0) line.reverse(); });
+      const order = lines.flat();
+      order.forEach((glyph, i) => {
+        const prev = order[i - 1];
+        const next = order[i + 1];
+        let pref: AnchorPreference | undefined;
 
-    glyphOrder.forEach((glyph, i) => {
-      const prev = glyphOrder[i - 1];
-      const next = glyphOrder[i + 1];
-      let pref: AnchorPreference | undefined;
-
-      if (next && glyph.lineIndex === next.lineIndex) {
-        const trans = findTransition(glyph.key, next.key, isMobile);
-        if (trans && trans.visibility === "visible" && trans.fromAnchor) {
-          pref = trans.fromAnchor;
+        if (next && glyph.lineIndex === next.lineIndex) {
+          const trans = findTrans(glyph.key, next.key, isMobile);
+          if (trans && trans.visibility === "visible" && trans.fromAnchor) {
+            pref = trans.fromAnchor;
+          }
         }
-      }
-      if (!pref && prev && glyph.lineIndex === prev.lineIndex) {
-        const trans = findTransition(prev.key, glyph.key, isMobile);
-        if (trans && trans.visibility === "visible" && trans.toAnchor) {
-          pref = trans.toAnchor;
+        if (!pref && prev && glyph.lineIndex === prev.lineIndex) {
+          const trans = findTrans(prev.key, glyph.key, isMobile);
+          if (trans && trans.visibility === "visible" && trans.toAnchor) {
+            pref = trans.toAnchor;
+          }
         }
-      }
-      if (!pref) {
-        pref = { mode: "top" };
-      }
+        if (lastFractions?.[glyph.key] !== undefined && i === order.length - 1) {
+          pref = { mode: "fraction", fraction: lastFractions[glyph.key]! };
+        }
+        if (!pref) {
+          pref = { mode: "top" };
+        }
 
-      glyph.junctions = glyph.paths.map((path, contourIndex) =>
-        findJunction(path, glyph.left, glyph.baselineY, glyph.scale, contourIndex === 0 ? pref : undefined),
-      );
-    });
+        glyph.junctions = glyph.paths.map((path, contourIndex) =>
+          findJunction(path, glyph.left, glyph.baselineY, glyph.scale, contourIndex === 0 ? pref : undefined),
+        );
+      });
+
+      const segments: Segment[] = [];
+      order.forEach((glyph, glyphIndex) => {
+        glyph.paths.forEach((path, contourIndex) => {
+          if (contourIndex > 0) segments.push({ drawLength: 0, weight: Math.max(18, groupFontSize * 0.18), startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 });
+          const length = path.getTotalLength();
+          segments.push({ element: path, drawLength: length, weight: length * glyph.scale, startDistance: glyph.junctions[contourIndex]!.distance, kind: "closed", layer: "glyph", startScroll: 0, endScroll: 1 });
+          if (contourIndex > 0) segments.push({ drawLength: 0, weight: Math.max(18, groupFontSize * 0.18), startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 });
+        });
+        const next = order[glyphIndex + 1];
+        if (next) {
+          const sameLine = glyph.lineIndex === next.lineIndex;
+          const trans = sameLine ? findTrans(glyph.key, next.key, isMobile) : undefined;
+          segments.push(createConnector(glyph, next, glyph.junctions[0]!, next.junctions[0]!, sameLine, groupFontSize, trans));
+        }
+      });
+      return { order, segments };
+    };
 
     const fontSize = Number.parseFloat(getComputedStyle(document.querySelector<HTMLElement>(".about__glyph")!).fontSize);
-    const headlineSegments: Segment[] = [];
-    glyphOrder.forEach((glyph, glyphIndex) => {
-      glyph.paths.forEach((path, contourIndex) => {
-        if (contourIndex > 0) headlineSegments.push({ drawLength: 0, weight: Math.max(18, fontSize * 0.18), startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 });
-        const length = path.getTotalLength();
-        headlineSegments.push({ element: path, drawLength: length, weight: length * glyph.scale, startDistance: glyph.junctions[contourIndex]!.distance, kind: "closed", layer: "glyph", startScroll: 0, endScroll: 1 });
-        if (contourIndex > 0) headlineSegments.push({ drawLength: 0, weight: Math.max(18, fontSize * 0.18), startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 });
-      });
-      const next = glyphOrder[glyphIndex + 1];
-      if (next) {
-        const sameLine = glyph.lineIndex === next.lineIndex;
-        const trans = sameLine ? findTransition(glyph.key, next.key, isMobile) : undefined;
-        headlineSegments.push(createConnector(glyph, next, glyph.junctions[0]!, next.junctions[0]!, sameLine, fontSize, trans));
-      }
-    });
+    const aboutGroup = buildGlyphGroup(
+      collectGlyphs(".about__glyph[data-glyph-key]", "data-glyph-key", "glyphKey", "glyphContour", "data-glyph-baseline", 0),
+      fontSize,
+      findTransition,
+      true,
+      ABOUT_EXIT_JUNCTION_FRACTIONS,
+    );
+    const glyphOrder = aboutGroup.order;
+    const headlineSegments = aboutGroup.segments;
+    if (!glyphOrder.length) return;
+    // Round 12: the Experience headline trace (same mechanism, reading
+    // order on both lines, no snake reversal). Absent (e.g. a heading
+    // without the trace prop) the page simply has no exp segments.
+    const expGlyphEl = document.querySelector<HTMLElement>(".exp__glyph");
+    const expFontSize = expGlyphEl ? Number.parseFloat(getComputedStyle(expGlyphEl).fontSize) : fontSize;
+    const expGroup = expGlyphEl
+      ? buildGlyphGroup(
+        collectGlyphs(".exp__glyph[data-exp-glyph-key]", "data-exp-glyph-key", "expGlyphKey", "expGlyphContour", "data-exp-glyph-baseline", 1),
+        expFontSize,
+        findExpTransition,
+        false,
+      )
+      : { order: [] as GlyphRecord[], segments: [] as Segment[] };
+    const expOrder = expGroup.order;
 
     const first = glyphOrder[0]!.junctions[0]!, last = glyphOrder.at(-1)!.junctions[0]!;
     const stmt = document.querySelector(".about__statement"), prof = document.querySelector(".about__profile");
@@ -384,11 +583,19 @@ export function initSiteThread() {
     // edge, and a vertical run continues down to turnY, so the thread
     // never cuts across the filled line.
     const filledSpan = document.querySelector<HTMLElement>(".about__title > span:first-child");
-    const filledTop = filledSpan ? filledSpan.getBoundingClientRect().top + scrollY : aboutTop;
-    const filledBottom = filledSpan ? filledSpan.getBoundingClientRect().bottom + scrollY : aboutTop + 400;
+    const filledBox = filledSpan ? docBox(filledSpan) : undefined;
+    const filledTop = filledBox ? filledBox.top : aboutTop;
+    const filledBottom = filledBox ? filledBox.bottom : aboutTop + 400;
     const runY = Math.max(first.y, filledBottom + 10);
     const connDx = rightEdge - endX;
-    const turnY = isMobile ? endY + 0.74 * (runY - endY) : runY - 100;
+    // Desktop quarter-turn radius: the turn must not overshoot the first
+    // junction's x. At 1280 the one-line layout puts the first junction
+    // only 95px left of the gutter, so a 100px turn ends 4.6px past it
+    // and the final run reverses (a 180deg kink). Clamp the radius so
+    // the run keeps at least 8px of leftward travel; the turn stays
+    // circular (turnY follows turnR).
+    const turnR = Math.min(100, Math.max(12, rightEdge - first.x - 8));
+    const turnY = isMobile ? endY + 0.74 * (runY - endY) : runY - turnR;
     const gutterTopY = Math.min(turnY, Math.max(endY + 60, filledTop - 40));
     const connL1 = (isMobile ? 1.1 : 0.5) * connDx;
     const connCp1x = endX + handoffDir.x * connL1;
@@ -405,15 +612,15 @@ export function initSiteThread() {
       const riseLen = 4.25 * (runY - first.y);
       connectorD = `M ${endX} ${endY} C ${connCp1x} ${connCp1y}, ${connCp2x} ${connCp2y}, ${rightEdge} ${gutterTopY} L ${rightEdge} ${turnY} L ${rightEdge} ${runY - filletR} C ${rightEdge} ${runY - filletR + filletK}, ${rightEdge - filletR + filletK} ${runY}, ${rightEdge - filletR} ${runY} L ${first.x + riseLen} ${runY} C ${first.x + 1.5 * (runY - first.y)} ${runY}, ${first.x + 0.8 * (runY - first.y)} ${first.y}, ${first.x} ${first.y}`;
     } else {
-      const turnR = 100;
       const turnK = 0.5523 * turnR;
       connectorD = `M ${endX} ${endY} C ${connCp1x} ${connCp1y}, ${connCp2x} ${connCp2y}, ${rightEdge} ${gutterTopY} L ${rightEdge} ${turnY} C ${rightEdge} ${turnY + turnK}, ${rightEdge - turnR + turnK} ${runY}, ${rightEdge - turnR} ${runY} L ${first.x} ${runY}`;
     }
 
     const p1 = document.querySelector("#fb-messenger-e2ee"), p2 = document.querySelector("#sky-sheet-store"), p3 = document.querySelector("#sky-auto-piano");
     const p1Bot = p1 ? botOf("#fb-messenger-e2ee") : projTop + 600, p2Top = p2 ? topOf("#sky-sheet-store") : projTop + 700, p2Bot = p2 ? botOf("#sky-sheet-store") : projTop + 1600, p3Top = p3 ? topOf("#sky-auto-piano") : projTop + 1700;
-    const emailBox = document.querySelector(".contact__email-btn")?.getBoundingClientRect();
-    const contactTargetX = emailBox ? Math.max(edge, emailBox.left - 24) : width * 0.25, contactTargetY = emailBox ? emailBox.top + scrollY + emailBox.height / 2 : contactTop + 300;
+    const emailEl = document.querySelector(".contact__email-btn");
+    const emailBox = emailEl ? docBox(emailEl) : undefined;
+    const contactTargetX = emailBox ? Math.max(edge, emailBox.left - 24) : width * 0.25, contactTargetY = emailBox ? (emailBox.top + emailBox.bottom) / 2 : contactTop + 300;
 
     // Stadium crossing: quarter-turn off the gutter, straight run across,
     // quarter-turn back onto the gutter. Tangents match the vertical gutter
@@ -424,56 +631,79 @@ export function initSiteThread() {
     // square brackets with rMin ~3-4 and (contrary to the round-11 brief)
     // already G1 - the defect was curvature, not tangent mismatch.
     const stadium = (x0: number, y0: number, x1: number, y1: number): string => {
-      const d = y1 - y0, r = d / 2, k = 0.5523 * r, s = Math.sign(x1 - x0);
-      return `C ${x0} ${y0 + k}, ${x0 + s * r - s * k} ${y0 + r}, ${x0 + s * r} ${y0 + r} L ${x1 - s * r} ${y0 + r} C ${x1 - s * r + s * k} ${y0 + r}, ${x1} ${y0 + r + k}, ${x1} ${y1}`;
+      const d = y1 - y0;
+      // Cap the turn radius so the straight run never reverses when the
+      // horizontal gap is narrower than the vertical span (round 12: a
+      // one-line exit drops close to the left edge while the crossing
+      // spans ~190px vertically). Unchanged for all current crossings,
+      // where the gap is far wider than the span.
+      const r = Math.min(d / 2, Math.max(4, Math.abs(x1 - x0) / 2 - 4)), k = 0.5523 * r, s = Math.sign(x1 - x0);
+      const turns = `C ${x0} ${y0 + k}, ${x0 + s * r - s * k} ${y0 + r}, ${x0 + s * r} ${y0 + r} L ${x1 - s * r} ${y0 + r} C ${x1 - s * r + s * k} ${y0 + r}, ${x1} ${y0 + r + k}, ${x1} ${y0 + 2 * r}`;
+      return 2 * r >= d ? turns : `${turns} L ${x1} ${y1}`;
     };
 
-    // Site-1 exit (round 11): the thread leaves the last glyph junction
-    // along the contour's arrival tangent (up the "." left edge) instead of
-    // horizontally, so there is no 90deg kink where the glyph tracing ends.
-    const lastGlyph = glyphOrder.at(-1)!;
-    const lastTan = contourArrival(lastGlyph.paths[0]!, last.distance);
-    // lastRight is the travel direction 90deg clockwise from lastTan
-    // (screen coords, y down): the direction the exit turns toward.
-    const lastRight = { x: -lastTan.y, y: lastTan.x };
-    let site1D: string;
-    if (isMobile) {
-      // Mobile: only ~22px of gutter room, so the exit is a small cap over
-      // the top (two quarter-turns, R = half the gutter gap), then a
-      // straight gutter run to the statement gap and the stadium crossing.
-      const capR = (rightEdge - last.x) / 2;
-      const capK = 0.5523 * capR;
-      const capMidX = last.x + capR;
-      const capMidY = last.y - capR;
-      site1D = `M ${last.x} ${last.y} C ${last.x + lastTan.x * capK} ${last.y + lastTan.y * capK}, ${capMidX - lastRight.x * capK} ${capMidY - lastRight.y * capK}, ${capMidX} ${capMidY} C ${capMidX + lastRight.x * capK} ${capMidY + lastRight.y * capK}, ${rightEdge} ${last.y + lastTan.y * capK}, ${rightEdge} ${last.y} C ${rightEdge} ${last.y + 40}, ${rightEdge} ${gapTop - 40}, ${rightEdge} ${gapTop} ${stadium(rightEdge, gapTop, edge, gapBot)} C ${edge} ${gapBot + 40}, ${edge} ${expTop - 40}, ${edge} ${expTop}`;
+    // Site-1 exit (round 12): the thread leaves the last glyph junction
+    // (top-right corner, so the contour departure heads straight down)
+    // and drops vertically through the clear channel below the glyphs
+    // instead of sweeping right to the gutter. Which glyph is last
+    // depends on the rendered line count: "." on two/three lines, "U"
+    // when the whole phrase fits one line (1280). The drop runs in the
+    // gap between the statement node and the note on desktop (1440:
+    // node ends x 724, note starts x 1247, drop x ~865) and ends above
+    // the profile, so it never reaches the profile copy; the stadium
+    // crossing below the statement then carries it to the left edge.
+    // When the drop x would hit statement text it jogs into the
+    // node/note channel above the text (run 14px above the topmost
+    // text): at 1280 the "." drop (~1184) would hit the note and the
+    // "U" drop (~190) would hit the first paragraph. On mobile the
+    // statement spans the full width, so the drop jogs right into the
+    // gutter above the statement top (two R=6.15 quarter-turns, the
+    // tightest the 12px jog allows). Every joint is G1: the drop leaves
+    // along the contour departure, the jog turns are quarter-turn
+    // cubics, the stadium starts heading down. The drop crosses only
+    // the statement's 1px top rule, never its text.
+    const lastJ = last;
+    const dropX = lastJ.x;
+    const crossY0 = gapTop;
+    // Optional jog around the one obstacle the vertical drop would hit.
+    let jog: { jogY: number; channelX: number; dir: number; r: number } | undefined;
+    if (!isMobile) {
+      const noteEl = document.querySelector(".about__note");
+      const nodeEl = document.querySelector(".about__node");
+      const p1El = document.querySelector(".about__statement > p:first-child");
+      const note = noteEl ? docBox(noteEl) : undefined;
+      const node = nodeEl ? docBox(nodeEl) : undefined;
+      const p1 = p1El ? docBox(p1El) : undefined;
+      const hit = (b: { left: number; right: number; top: number; bottom: number } | undefined) =>
+        b && dropX > b.left - 10 && dropX < b.right + 10 && b.top < crossY0 && b.bottom > lastJ.y;
+      if (hit(note) || hit(node) || hit(p1)) {
+        const channelX = node && note ? (node.right + note.left) / 2 : dropX - 300;
+        const r = Math.min(32, Math.abs(channelX - dropX) / 2);
+        const clearTop = Math.min(note?.top ?? Infinity, node?.top ?? Infinity, p1?.top ?? Infinity);
+        jog = { jogY: clearTop - 14 - r, channelX, dir: Math.sign(channelX - dropX) || -1, r };
+      }
     } else {
-      // Desktop: a quarter-turn up and right, a long sweep right and down,
-      // then a run above the statement (B1), a quarter-turn down (B2) and
-      // a straight gutter drop; the crossing stadium starts where the exit
-      // ends (below the statement gap) and spans to the profile top. The
-      // old single B curve cut diagonally through the statement's box, so
-      // B1 stays above it (max y ~12px above its expanded top) and B2
-      // turns down only once it is inside the right gutter.
-      const exitR = 0.2 * fontSize;
-      const exitK = 0.5523 * exitR;
-      const a1EndX = last.x + exitR * (lastTan.x + lastRight.x);
-      const a1EndY = last.y + exitR * (lastTan.y + lastRight.y);
-      const a2EndX = rightEdge - 2.45 * fontSize;
-      const a2EndY = last.y + 0.65 * fontSize;
-      const bEndY = a2EndY + 1.13 * fontSize;
-      // A2 ends heading (0.81, 0.33) (its second control point sits
-      // 0.81/0.33 fontSize back from the end); B1 leaves along that ray.
-      const a2TanX = 0.81 / Math.hypot(0.81, 0.33);
-      const a2TanY = 0.33 / Math.hypot(0.81, 0.33);
-      const b1EndX = rightEdge - 32;
-      const b1EndY = a2EndY + 12;
-      const b2R = 32;
-      const b2K = 0.5523 * b2R;
-      const crossStartY = Math.max(bEndY, gapTop);
-      const gutterRun = crossStartY > bEndY
-        ? ` C ${rightEdge} ${bEndY + 40}, ${rightEdge} ${crossStartY - 40}, ${rightEdge} ${crossStartY}`
-        : "";
-      site1D = `M ${last.x} ${last.y} C ${last.x + lastTan.x * exitK} ${last.y + lastTan.y * exitK}, ${a1EndX - lastRight.x * exitK} ${a1EndY - lastRight.y * exitK}, ${a1EndX} ${a1EndY} C ${a1EndX + 0.49 * fontSize} ${a1EndY}, ${a2EndX - 0.81 * fontSize} ${a2EndY - 0.33 * fontSize}, ${a2EndX} ${a2EndY} C ${a2EndX + a2TanX * 0.35 * fontSize} ${a2EndY + a2TanY * 0.35 * fontSize}, ${b1EndX - 0.6 * fontSize} ${b1EndY}, ${b1EndX} ${b1EndY} C ${b1EndX + b2K} ${b1EndY}, ${rightEdge} ${b1EndY + b2R - b2K}, ${rightEdge} ${b1EndY + b2R} L ${rightEdge} ${bEndY}${gutterRun} ${stadium(rightEdge, crossStartY, edge, gapBot)} C ${edge} ${gapBot + 40}, ${edge} ${expTop - 40}, ${edge} ${expTop}`;
+      const stmtBox = stmt ? docBox(stmt) : undefined;
+      if (stmtBox && dropX > stmtBox.left - 10 && dropX < stmtBox.right + 10 && stmtBox.top < crossY0 && stmtBox.bottom > lastJ.y) {
+        const r = (rightEdge - dropX) / 2;
+        jog = { jogY: stmtBox.top - 14 - r, channelX: rightEdge, dir: 1, r };
+      }
+    }
+    const jogEndY = jog ? jog.jogY + 2 * jog.r : lastJ.y;
+    const crossY = Math.min(Math.max(crossY0, jogEndY + 20), gapBot - 40);
+    const qk = 0.5523;
+    let site1D: string;
+    if (!jog) {
+      site1D = `M ${lastJ.x} ${lastJ.y} L ${dropX} ${crossY} ${stadium(dropX, crossY, edge, gapBot)} C ${edge} ${gapBot + 40}, ${edge} ${expTop - 40}, ${edge} ${expTop}`;
+    } else {
+      const { jogY, channelX, dir, r } = jog;
+      const kk = qk * r;
+      const turn1EndX = dropX + dir * r;
+      const turn1EndY = jogY + r;
+      const turn2StartX = channelX - dir * r;
+      const turn2EndY = jogY + 2 * r;
+      const run = Math.abs(turn2StartX - turn1EndX) > 0.5 ? ` L ${turn2StartX} ${turn1EndY}` : "";
+      site1D = `M ${lastJ.x} ${lastJ.y} L ${dropX} ${jogY} C ${dropX} ${jogY + kk}, ${turn1EndX - dir * kk} ${turn1EndY}, ${turn1EndX} ${turn1EndY}${run} C ${turn2StartX + dir * kk} ${turn1EndY}, ${channelX} ${turn2EndY - kk}, ${channelX} ${turn2EndY} L ${channelX} ${crossY} ${stadium(channelX, crossY, edge, gapBot)} C ${edge} ${gapBot + 40}, ${edge} ${expTop - 40}, ${edge} ${expTop}`;
     }
 
     // Site-5 contact approach (round 11): straight gutter run, then a
@@ -491,11 +721,307 @@ export function initSiteThread() {
     const gutterEndY = contactTargetY - 75;
     const site5D = `M ${edge} ${contactTop} C ${edge} ${contactTop + (gutterEndY - contactTop) / 3}, ${edge} ${contactTop + (2 * (gutterEndY - contactTop)) / 3}, ${edge} ${gutterEndY} C ${edge} ${contactTargetY - 31}, ${approachCp2x} ${approachCp2y}, ${contactTargetX} ${contactTargetY}`;
 
+    // Site-2 career timeline (round 12, point 3): the thread leaves the
+    // left gutter below the "Career Milestones" title, ramps onto the
+    // milestone line and runs vertically through both numbered marker
+    // centres (chronological: Intern 01, Fresher 02), then ramps back to
+    // the gutter and down to Projects. The run coincides with the CSS
+    // timeline line (.timeline-steps::before, same x, same 2px width),
+    // which stays as the no-JS fallback; the thread draws over it.
+    // Both ramps are elongated cubics with vertical tangents at both
+    // ends (G1 with the gutter run above and the marker run below, and
+    // with the gutter run at Projects). The entry ramp starts above or
+    // below the title depending on the gutter gap (see the branch below)
+    // so the move right happens only where the step text sits 15px right
+    // of the marker centre; the exit ramp runs in the clear
+    // gap below the sidebar (single column) or below the dossier
+    // (two columns), never across initiative cards. Handles are capped
+    // at 0.45*dy so the control-point y values stay ordered and the
+    // ramps stay monotonic in x and y (no S, no loop).
+    const rampV = (x0: number, y0: number, x1: number, y1: number): string => {
+      const k = Math.min(0.42 * Math.hypot(x1 - x0, y1 - y0), 0.45 * Math.abs(y1 - y0));
+      return `C ${x0} ${y0 + k}, ${x1} ${y1 - k}, ${x1} ${y1}`;
+    };
+    const markerEls = [...document.querySelectorAll<HTMLElement>(".step-marker")];
+    const markerCentres = markerEls.map((el) => { const b = docBox(el); return { x: (b.left + b.right) / 2, y: (b.top + b.bottom) / 2 }; });
+    const titleTop = topOf(".timeline-title");
+    const titleBottom = botOf(".timeline-title");
+    let site2D: string;
+    if (markerCentres.length >= 2 && titleTop > expTop && titleBottom + 6 < markerCentres[0]!.y) {
+      const m1 = markerCentres[0]!, m2 = markerCentres[1]!;
+      const mx = m1.x;
+      // Entry branch on the gutter-to-marker gap dx = mx - edge.
+      // Narrow (dx <= 22, mobile): start below the title (dy ~24). The
+      // short ramp's radius is 8-9 there, and the title clearance is
+      // hypot(dx-5, 6) >= 13.
+      // Wide (dx > 22): start 7px above the title (dy ~50). The longer
+      // run opens the radius to 20+ and the title clearance to 12+.
+      // A single geometry cannot satisfy both bars at both ends: the
+      // long entry's title clearance drops to ~6.5 at dx=17, and the
+      // short entry's radius drops to ~5 at dx=35.
+      const dx = mx - edge;
+      const yB = dx <= 22 ? titleBottom + 6 : titleTop - 7;
+      let exitD: string;
+      if (width <= 1024) {
+        // Single column (sidebar on top): exit in the gap between the
+        // sidebar and the initiatives, so the run never crosses a card.
+        const yC = botOf(".experience__sidebar") + 10;
+        const yD = topOf(".experience__initiatives") - 10;
+        exitD = `L ${mx} ${yC} ${rampV(mx, yC, edge, yD)} L ${edge} ${projTop}`;
+      } else {
+        // Two columns: exit below the whole dossier, in the clear gap
+        // before the Projects section.
+        const yC = botOf(".experience__dossier") + 14;
+        const yD = projTop - 20;
+        exitD = `L ${mx} ${yC} ${rampV(mx, yC, edge, yD)} L ${edge} ${projTop}`;
+      }
+      site2D = `M ${edge} ${expTop} L ${edge} ${yB} ${rampV(edge, yB, mx, m1.y)} L ${mx} ${m2.y} ${exitD}`;
+    } else {
+      site2D = `M ${edge} ${expTop} C ${edge} ${expTop + (projTop - expTop) * 0.3}, ${edge} ${expTop + (projTop - expTop) * 0.7}, ${edge} ${projTop}`;
+    }
+
+    // --- Round 12 project chain -----------------------------------------
+    // One continuous thread through the three project stages, replacing
+    // the old Projects gutter run (stadium crossings between articles).
+    // The stage thread-back/thread-front SVGs stay as the rendering
+    // layers for the one site thread (they are what let the filament pass
+    // behind the E2EE frames and in front of the other structures); there
+    // is no separate thread system anymore. The site thread's render()
+    // drives the stage paths' dashes via dashSetter (Round 6 invariant +
+    // round-8 CTM scale fix). Each stage path draws inside its article's
+    // ScrollTrigger window (the DOM choreography's p-windows, so thread
+    // and DOM share one progress value); the site-space connectors tile
+    // the scroll gaps between the articles' windows.
+    //
+    // Route (travel order): gutter run down to the E2EE stage entry ->
+    // E2EE stage paths -> connector to the Sheet Store stage entry ->
+    // Sheet paths -> connector to the Piano stage entry -> Piano belt
+    // paths -> gutter run to skillsTop. All connectors are gutter/gap
+    // runs joined by quarter-turn cubics (see makeRoute), so every
+    // junction is G1. Two layout axes decide the shape, measured live:
+    // the stage variant (desktop SVG entries run east, mobile top/bottom
+    // corridors run south) and the exhibit columns (two columns above
+    // 1024px, single column below, so the Piano entry must be approached
+    // down the inter-column gap on two-column layouts and from the left
+    // gutter otherwise). If any stage is missing the chain is skipped
+    // and the old gutter run is kept, so the thread never breaks.
+    const twoCol = width > 1024;
+    const stageVariant = isMobile ? "mobile" : "desktop";
+    const stageBoxOf = (slug: string) => {
+      const stage = document.querySelector<HTMLElement>(`[data-project-slug="${slug}"]`);
+      return stage ? { stage, box: docBox(stage) } : null;
+    };
+    const contentBoxOf = (slug: string) => {
+      const el = document.querySelector<HTMLElement>(`#${slug} .project-exhibit__content`);
+      return el ? docBox(el) : null;
+    };
+    type BuiltStage = {
+      slug: string; plan: StagePlan;
+      paths: SVGPathElement[];
+      dot: SVGCircleElement | null;
+      entry: { x: number; y: number }; exit: { x: number; y: number };
+      entryDir: "E" | "S"; exitDir: "E" | "S";
+      artStart: number; artEnd: number;
+    };
+    const buildStage = (slug: string): BuiltStage | null => {
+      const found = stageBoxOf(slug);
+      const plan = STAGE_PLANS[slug]?.[stageVariant];
+      if (!found || !plan) return null;
+      const { stage, box } = found;
+      const layerPaths = (layer: "front" | "back") =>
+        [...stage.querySelectorAll<SVGPathElement>(`svg[data-variant="${stageVariant}"][data-layer="thread-${layer}"] .project-thread-path`)];
+      const fronts = layerPaths("front"), backs = layerPaths("back");
+      const paths = plan.order.map(([layer, i]) => (layer === "front" ? fronts[i] : backs[i])!).filter(Boolean);
+      if (paths.length !== plan.order.length) return null;
+      const article = stage.closest<HTMLElement>("article[data-project]");
+      if (!article) return null;
+      const artBox = docBox(article);
+      const mapPoint = (pt: [number, number]) => ({
+        x: box.left + (pt[0] / plan.vbW) * (box.right - box.left),
+        y: box.top + (pt[1] / plan.vbH) * (box.bottom - box.top),
+      });
+      return {
+        slug, plan, paths,
+        dot: stage.querySelector<SVGCircleElement>(`svg[data-variant="${stageVariant}"] .project-thread-dot--end`),
+        entry: mapPoint(plan.entry),
+        exit: mapPoint(plan.exit),
+        entryDir: isMobile ? "S" : "E",
+        exitDir: isMobile ? "S" : "E",
+        artStart: artBox.top - 0.8 * winHeight,
+        artEnd: Math.max(artBox.top - 0.8 * winHeight + 1, artBox.bottom - 0.45 * winHeight),
+      };
+    };
+    const e2eeStage = buildStage("fb-messenger-e2ee");
+    const sheetStage = buildStage("sky-sheet-store");
+    const pianoStage = buildStage("sky-auto-piano");
+    // Radius for the quarter-turns at an inter-article gap: the turns
+    // must stay inside the empty gap band, so the radius is capped at
+    // half the gap minus a margin (floor 6 keeps the turn a fillet, not
+    // a kink).
+    const gapTurn = (gapSize: number) => Math.min(40, Math.max(6, gapSize / 2 - 6));
+    // Append the approach into `stage`'s entry to a route arriving
+    // heading west at (x, midGap). "gutter": west run to the left gutter,
+    // south, then into the entry (east run for left/right entries, top
+    // jog for top entries). "gap": two-column Piano only, where the
+    // content column sits west of the stage, so the thread descends in
+    // the inter-column gap and turns into the entry from there instead
+    // of crossing the content.
+    const approachEntry = (
+      route: ReturnType<typeof makeRoute>,
+      stage: BuiltStage,
+      midGap: number,
+      mode: "gutter" | "gap",
+      rTurn: number,
+      gapWest = 48,
+    ) => {
+      const { entry, entryDir } = stage;
+      if (mode === "gap" && entryDir === "E") {
+        const rE = Math.max(6, Math.min(48, gapWest - 6, rTurn));
+        route.lineTo(entry.x, midGap);
+        route.turn("S", rE);
+        route.lineTo(entry.x - rE, entry.y - rE);
+        route.turn("E", rE);
+        route.lineTo(entry.x, entry.y);
+        return;
+      }
+      route.lineTo(edge + rTurn, midGap);
+      route.turn("S", rTurn);
+      if (entryDir === "E") {
+        const rD = Math.min(60, Math.max(4, entry.x - edge));
+        route.lineTo(edge, entry.y - rD);
+        route.turn("E", rD);
+        route.lineTo(entry.x, entry.y);
+      } else {
+        // Mobile top entry: gutter -> east along the top margin -> south
+        // into the entry point on the stage's top edge.
+        const rr = Math.min(16, Math.max(6, (entry.x - edge) / 3));
+        route.lineTo(edge, entry.y - 2 * rr);
+        route.turn("E", rr);
+        route.lineTo(entry.x - rr, entry.y - rr);
+        route.turn("S", rr);
+        route.lineTo(entry.x, entry.y);
+      }
+    };
+    // Jog from a south-heading stage exit (mobile bottom corridors) to a
+    // south run down the right gutter: east below the stage, then south.
+    // The jog stays above the article's content column (gap 2.5rem on
+    // single-column layouts), so both radii are capped at half that gap.
+    const exitJogSouth = (route: ReturnType<typeof makeRoute>, stage: BuiltStage) => {
+      const content = contentBoxOf(stage.slug);
+      const contentTop = content ? content.top : stage.exit.y + 40;
+      const rJ = Math.min(24, Math.max(8, (contentTop - stage.exit.y) / 2 - 4));
+      route.turn("E", rJ);
+      route.lineTo(rightEdge - rJ, stage.exit.y + rJ);
+      route.turn("S", rJ);
+      // The turn already ends at (rightEdge, exit.y + 2*rJ) heading south.
+    };
+
+    let chain: { c0d: string; c1d: string; c2d: string; c3d: string; stages: BuiltStage[] } | null = null;
+    if (e2eeStage && sheetStage && pianoStage) {
+      const g12mid = (botOf("#fb-messenger-e2ee") + topOf("#sky-sheet-store")) / 2;
+      const g12size = topOf("#sky-sheet-store") - botOf("#fb-messenger-e2ee");
+      const g23mid = (botOf("#sky-sheet-store") + topOf("#sky-auto-piano")) / 2;
+      const g23size = topOf("#sky-auto-piano") - botOf("#sky-sheet-store");
+      const rG12 = gapTurn(g12size), rG23 = gapTurn(g23size);
+      const e2eeContent = contentBoxOf("fb-messenger-e2ee");
+      const pianoContent = contentBoxOf("sky-auto-piano");
+
+      // C0: left gutter down to the E2EE entry.
+      const c0 = makeRoute(edge, projTop, "S");
+      if (e2eeStage.entryDir === "E") {
+        const r0 = Math.min(60, Math.max(4, e2eeStage.entry.x - edge));
+        c0.lineTo(edge, e2eeStage.entry.y - r0);
+        c0.turn("E", r0);
+        c0.lineTo(e2eeStage.entry.x, e2eeStage.entry.y);
+      } else {
+        const rr = Math.min(16, Math.max(6, (e2eeStage.entry.x - edge) / 3));
+        c0.lineTo(edge, e2eeStage.entry.y - 2 * rr);
+        c0.turn("E", rr);
+        c0.lineTo(e2eeStage.entry.x - rr, e2eeStage.entry.y - rr);
+        c0.turn("S", rr);
+        c0.lineTo(e2eeStage.entry.x, e2eeStage.entry.y);
+      }
+
+      // C1: E2EE exit -> Sheet Store entry via the inter-article gap.
+      const c1 = makeRoute(e2eeStage.exit.x, e2eeStage.exit.y, e2eeStage.exitDir);
+      if (e2eeStage.exitDir === "E") {
+        // Descent: in the inter-column gap on two-column layouts (the
+        // content column sits east of the stage), in the right gutter on
+        // single-column layouts (the stage spans the full width).
+        const rA = twoCol && e2eeContent
+          ? Math.max(6, Math.min(48, e2eeContent.left - e2eeStage.exit.x - 6))
+          : Math.min(60, Math.max(8, rightEdge - e2eeStage.exit.x));
+        c1.turn("S", rA);
+        c1.lineTo(e2eeStage.exit.x + rA, g12mid - rG12);
+        c1.turn("W", rG12);
+      } else {
+        exitJogSouth(c1, e2eeStage);
+        c1.lineTo(rightEdge, g12mid - rG12);
+        c1.turn("W", rG12);
+      }
+      approachEntry(c1, sheetStage, g12mid, "gutter", rG12);
+
+      // C2: Sheet Store exit -> Piano entry via the inter-article gap.
+      const c2 = makeRoute(sheetStage.exit.x, sheetStage.exit.y, sheetStage.exitDir);
+      if (sheetStage.exitDir === "E") {
+        const rA = Math.min(60, Math.max(8, rightEdge - sheetStage.exit.x));
+        c2.turn("S", rA);
+        c2.lineTo(sheetStage.exit.x + rA, g23mid - rG23);
+        c2.turn("W", rG23);
+      } else {
+        exitJogSouth(c2, sheetStage);
+        c2.lineTo(rightEdge, g23mid - rG23);
+        c2.turn("W", rG23);
+      }
+      if (twoCol && pianoContent) {
+        approachEntry(c2, pianoStage, g23mid, "gap", rG23, pianoStage.entry.x - pianoContent.right);
+      } else {
+        approachEntry(c2, pianoStage, g23mid, "gutter", rG23);
+      }
+
+      // C3: Piano exit -> left gutter -> skillsTop. The stadium crossing
+      // mirrors the old site-3 crossing (article bottom -> skills top).
+      const c3 = makeRoute(pianoStage.exit.x, pianoStage.exit.y, pianoStage.exitDir);
+      let c3DescentX: number;
+      if (pianoStage.exitDir === "E") {
+        const rA = Math.min(60, Math.max(8, rightEdge - pianoStage.exit.x));
+        c3.turn("S", rA);
+        c3DescentX = pianoStage.exit.x + rA;
+      } else {
+        exitJogSouth(c3, pianoStage);
+        c3DescentX = rightEdge;
+      }
+      const p3Bot = botOf("#sky-auto-piano");
+      c3.lineTo(c3DescentX, p3Bot);
+      const c3d = `${c3.d} ${stadium(c3DescentX, p3Bot, edge, skillsTop)}`;
+
+      chain = { c0d: c0.d, c1d: c1.d, c2d: c2.d, c3d, stages: [e2eeStage, sheetStage, pianoStage] };
+    }
+    // Last build's connectors are removed before new ones are created
+    // (build runs again on resize); the site thread's own 7 segments are
+    // untouched.
+    svg.querySelectorAll("[data-project-connector]").forEach((el) => el.remove());
+    const connectorEls: SVGPathElement[] = [];
+    if (chain) {
+      (["c1", "c2", "c3"] as const).forEach((key) => {
+        const el = document.createElementNS(SVG_NS, "path");
+        el.setAttribute("data-project-connector", key);
+        el.setAttribute("d", chain![`${key}d` as "c1d" | "c2d" | "c3d"]);
+        svg.append(el);
+        connectorEls.push(el);
+      });
+    }
+
     const pathData = [
       `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`,
       site1D,
-      `M ${edge} ${expTop} C ${edge} ${expTop + (projTop - expTop) * 0.3}, ${edge} ${expTop + (projTop - expTop) * 0.7}, ${edge} ${projTop}`,
-      `M ${edge} ${projTop} C ${edge} ${p1Bot - 40}, ${edge} ${p1Bot - 10}, ${edge} ${p1Bot} ${stadium(edge, p1Bot, rightEdge, p2Top)} C ${rightEdge} ${p2Bot - 40}, ${rightEdge} ${p2Bot - 10}, ${rightEdge} ${p2Bot} ${stadium(rightEdge, p2Bot, edge, p3Top)} C ${edge} ${skillsTop - 40}, ${edge} ${skillsTop - 10}, ${edge} ${skillsTop}`,
+      site2D,
+      // Round 12: site segment 3 is the C0 connector (gutter run down to
+      // the E2EE stage entry); the rest of the project chain (C1, stage
+      // paths, C2, C3) is built as segments below. Fallback is the old
+      // Projects gutter run, kept so the thread never breaks if a stage
+      // is missing.
+      chain ? chain.c0d : `M ${edge} ${projTop} C ${edge} ${p1Bot - 40}, ${edge} ${p1Bot - 10}, ${edge} ${p1Bot} ${stadium(edge, p1Bot, rightEdge, p2Top)} C ${rightEdge} ${p2Bot - 40}, ${rightEdge} ${p2Bot - 10}, ${rightEdge} ${p2Bot} ${stadium(rightEdge, p2Bot, edge, p3Top)} C ${edge} ${skillsTop - 40}, ${edge} ${skillsTop - 10}, ${edge} ${skillsTop}`,
       `M ${edge} ${skillsTop} C ${edge} ${skillsTop + (contactTop - skillsTop) * 0.3}, ${edge} ${skillsTop + (contactTop - skillsTop) * 0.7}, ${edge} ${contactTop}`,
       site5D,
       connectorD,
@@ -524,11 +1050,100 @@ export function initSiteThread() {
     setTiming(siteSegments[6]!, sHandoffEnd, sGlyphStart);
 
     s2 = Math.max(s1 + Math.max(480, winHeight * 0.62), Math.round(last.y - winHeight * 0.34));
-    const s3 = Math.max(s2 + 160, Math.round(expTop - winHeight * 0.55)), s4 = Math.max(s3 + 60, Math.round(projTop - winHeight * 0.55)), s5 = Math.max(s4 + 60, Math.round(skillsTop - winHeight * 0.55)), s6 = Math.max(s5 + 60, Math.round(contactTop - winHeight * 0.55)), s7 = Math.max(s6 + 60, height - winHeight);
+    const s3 = Math.max(s2 + 160, Math.round(expTop - winHeight * 0.55));
+    // Round 12: the Experience headline trace runs between site-1 (which
+    // ends at the Experience top) and site-2 (left gutter to Projects).
+    // Entry/exit are hidden weighted travel: in from the site-1 end
+    // (left edge, expTop) to the first exp junction, out from the last
+    // exp junction back to the site-2 start, so the dot never teleports
+    // visibly between the headline and the gutter run.
+    const expFirst = expOrder[0]?.junctions[0];
+    const expLast = expOrder.at(-1)?.junctions[0];
+    let expSegments: Segment[] = [];
+    let sExp = s3;
+    if (expFirst && expLast && expOrder.length) {
+      const distTo = (a: Junction, b: Junction) => Math.hypot(b.x - a.x, b.y - a.y);
+      const site1End: Junction = { x: edge, y: expTop, distance: 0 };
+      const entryWeight = Math.max(fontSize * 0.22, distTo(site1End, expFirst) * 0.18);
+      const exitWeight = Math.max(fontSize * 0.22, distTo(expLast, site1End) * 0.18);
+      expSegments = [
+        { drawLength: 0, weight: entryWeight, startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 },
+        ...expGroup.segments,
+        { drawLength: 0, weight: exitWeight, startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 },
+      ];
+      sExp = Math.max(s3 + Math.max(480, winHeight * 0.62), Math.round(expLast.y - winHeight * 0.34));
+      const expWeight = expSegments.reduce((sum, segment) => sum + segment.weight, 0);
+      let expCursor = s3;
+      expSegments.forEach((segment) => { const end = expCursor + (sExp - s3) * segment.weight / expWeight; setTiming(segment, expCursor, end); expCursor = end; });
+    }
+    const s4 = Math.max(sExp + 60, Math.round(projTop - winHeight * 0.55)), s5 = Math.max(s4 + 60, Math.round(skillsTop - winHeight * 0.55)), s6 = Math.max(s5 + 60, Math.round(contactTop - winHeight * 0.55)), s7 = Math.max(s6 + 60, height - winHeight);
     const headlineWeight = headlineSegments.reduce((sum, segment) => sum + segment.weight, 0); let cursor = s1;
     headlineSegments.forEach((segment) => { const end = cursor + (s2 - s1) * segment.weight / headlineWeight; setTiming(segment, cursor, end); cursor = end; });
-    setTiming(siteSegments[1]!, s2, s3); setTiming(siteSegments[2]!, s3, s4); setTiming(siteSegments[3]!, s4, s5); setTiming(siteSegments[4]!, s5, s6); setTiming(siteSegments[5]!, s6, s7);
-    segments = [siteSegments[0]!, siteSegments[6]!, ...headlineSegments, ...siteSegments.slice(1)];
+    setTiming(siteSegments[1]!, s2, s3);
+    // Round 12: the project chain tiles [chainStart, chainEnd] gaplessly.
+    // C0 runs the gutter while the Projects header scrolls by, each
+    // stage's paths tile its article's trigger window (so the thread and
+    // the DOM choreography share one progress value), the inter-stage
+    // connectors tile the gaps between articles, and C3 lands on
+    // skillsTop where site-4 takes over.
+    let chainSegments: Segment[] = [];
+    if (chain) {
+      const chainStart = Math.max(sExp + 1, Math.min(s4, chain.stages[0]!.artStart - 1));
+      const chainEnd = Math.max(s5, chain.stages[2]!.artEnd + 1);
+      const s6c = Math.max(s6, chainEnd + 60);
+      const s7c = Math.max(s7, s6c + 60);
+      setTiming(siteSegments[2]!, sExp, chainStart);
+      setTiming(siteSegments[3]!, chainStart, chain.stages[0]!.artStart);
+      const mkStageSegs = (stage: BuiltStage): Segment[] =>
+        stage.paths.map((element, i) => {
+          const w = stage.plan.windows[i]!;
+          const span = stage.artEnd - stage.artStart;
+          const seg: Segment = {
+            element,
+            drawLength: element.getTotalLength(),
+            weight: element.getTotalLength(),
+            startDistance: 0,
+            kind: "open",
+            layer: "site",
+            startScroll: 0,
+            endScroll: 1,
+            setDash: dashSetter(element),
+            occluded: stage.plan.order[i]![0] === "back",
+          };
+          setTiming(seg, stage.artStart + w[0] * span, stage.artStart + w[1] * span);
+          return seg;
+        });
+      const mkConnectorSeg = (element: SVGPathElement, start: number, end: number): Segment => {
+        const seg: Segment = {
+          element,
+          drawLength: element.getTotalLength(),
+          weight: element.getTotalLength(),
+          startDistance: 0,
+          kind: "open",
+          layer: "site",
+          startScroll: 0,
+          endScroll: 1,
+        };
+        setTiming(seg, start, end);
+        return seg;
+      };
+      const e2eeSegs = mkStageSegs(chain.stages[0]!);
+      const sheetSegs = mkStageSegs(chain.stages[1]!);
+      const pianoSegs = mkStageSegs(chain.stages[2]!);
+      const c1Seg = mkConnectorSeg(connectorEls[0]!, chain.stages[0]!.artEnd, chain.stages[1]!.artStart);
+      const c2Seg = mkConnectorSeg(connectorEls[1]!, chain.stages[1]!.artEnd, chain.stages[2]!.artStart);
+      const c3Seg = mkConnectorSeg(connectorEls[2]!, chain.stages[2]!.artEnd, chainEnd);
+      chainSegments = [siteSegments[3]!, ...e2eeSegs, c1Seg, ...sheetSegs, c2Seg, ...pianoSegs, c3Seg];
+      stageDots = chain.stages.map((stage) => ({ dot: stage.dot, artStart: stage.artStart, artEnd: stage.artEnd, dotEnd: stage.plan.dotEnd }));
+      setTiming(siteSegments[4]!, chainEnd, s6c);
+      setTiming(siteSegments[5]!, s6c, s7c);
+    } else {
+      setTiming(siteSegments[2]!, sExp, s4); setTiming(siteSegments[3]!, s4, s5); setTiming(siteSegments[4]!, s5, s6); setTiming(siteSegments[5]!, s6, s7);
+      stageDots = [];
+    }
+    segments = chain
+      ? [siteSegments[0]!, siteSegments[6]!, ...headlineSegments, siteSegments[1]!, ...expSegments, siteSegments[2]!, ...chainSegments, siteSegments[4]!, siteSegments[5]!]
+      : [siteSegments[0]!, siteSegments[6]!, ...headlineSegments, siteSegments[1]!, ...expSegments, ...siteSegments.slice(2)];
     render(scrollY);
   };
 

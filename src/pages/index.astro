@@ -7,7 +7,7 @@ import Projects from "../components/Projects.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import SkillsEducation from "../components/SkillsEducation.astro";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { ABOUT_GLYPH_INSTANCES } from "../data/about-glyphs";
+import { ABOUT_GLYPH_INSTANCES, EXP_GLYPH_INSTANCES } from "../data/about-glyphs";
 
 const title = "HerokeyVN — Backend Developer | Node.js & TypeScript";
 const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh City building Node.js and TypeScript systems, identity services, and practical applications.";
@@ -26,6 +26,9 @@ const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh 
       <!-- Copyright 2019 The Syne Project Authors. Glyph contours extracted from Syne 700 under SIL OFL 1.1. -->
       {ABOUT_GLYPH_INSTANCES.map((glyph) => glyph.contours.map((d, contourIndex) => (
         <path data-glyph-key={glyph.key} data-glyph-contour={contourIndex} d={d}></path>
+      )))}
+      {EXP_GLYPH_INSTANCES.map((glyph) => glyph.contours.map((d, contourIndex) => (
+        <path data-exp-glyph-key={glyph.key} data-exp-glyph-contour={contourIndex} d={d}></path>
       )))}
       <g data-glyph-connectors></g>
       <circle data-glyph-thread-end r="4"></circle>
