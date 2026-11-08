@@ -319,8 +319,12 @@ Tests (`tests/portfolio.spec.ts`):
 
 Verification status (2026-11-09, fix agent - VM BUILD BLOCKED by EPERM, verification moved to Ubuntu):
 
-- `npm run check`: PASS, 0 errors / 0 warnings / 7 hints (after all edits, including the test).
+- `npm run check`: PASS, 0 errors / 0 warnings / 7 hints (after all edits, including the test; re-run after the fixup below).
 - `npm run build` (VM): BLOCKED by the EPERM fault (rolldown write fails on `dist/.prerender/prerender-entry.BKgkpXxK.mjs`, Operation not permitted; 4 attempts 18:20-18:24 UTC, including after `rm -rf dist`). Build + full Playwright suite to be run on the Ubuntu laptop after pull (no EPERM fault there).
+- Pushed commits: `2c7b977` FIX(thread): trace all headlines, paint connectors, smooth key-14 joint; `38928cd` FIX(thread): correct word index for proj/skills/contact glyph keys (see bug below). Remote `feat/project-thread-motifs` verified at `38928cd` via ls-remote.
+- BUG FOUND BY THE UBUNTU PROBE (fixed in `38928cd`, not yet verified live): the first push wired proj/skills/contact with `wordPart: 0`, but their glyph keys are 3-part (`<id>-<word>-<char>`, e.g. `proj-0-0`), so the word index parsed as `NaN`, the baseline lookup returned null, and `build()` threw `TypeError: Cannot read properties of null (reading 'getBoundingClientRect')` at the Projects trace - killing the whole thread (all connector dasharrays stayed empty). The Ubuntu probe (`/tmp/r121/probe5.mjs`) proved the stroke fix live (computed stroke `rgb(255, 60, 26)/2px` on C1/C2/C3) but also proved the thread was dead. The fix sets `wordPart: 1` for proj/skills/contact (About stays 0: its keys are 2-part `<word>-<char>`; Exp was already 1). Correctness confirmed statically from the key formats in `SectionHeading.astro`, `Contact.astro` and `about-glyphs.ts` (`instancesFor`); live verification still pending.
+- Ubuntu pull: `2c7b977` pulled OK (HEAD `2c7b977`, dev server 200, `npm run check` 0 errors, `npm run build` complete). The `38928cd` pull is PENDING: the laptop became unreachable via Tailscale ~01:40 +07 (proxy closed during CONNECT, repeated retries; likely asleep) - pull + probe + test run + captures still to do once it is back.
+- VM live verification is NOT possible: Chromium (bundled headless shell and full chromium-1248, persistent context, `--no-zygote --single-process`) dies with SIGTRAP on launch, same as Round 12. The VM dev server does run (HTTP 200) but there is no browser to load it.
 - Live screenshots: to be captured on the Ubuntu dev server after pull (same scroll positions as the repro shots, 1920x1080 and 1920x925), saved as `~/workspace/portfolio-check/motif8-fix-*.png`.
 
 Known issues (unchanged):
