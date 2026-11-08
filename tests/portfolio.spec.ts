@@ -2623,9 +2623,9 @@ test("round 12: glyph exit descends straight and Experience headline is traced",
       const errors: number[] = [];
       [...document.querySelectorAll<SVGPathElement>("[data-exp-glyph-contour]")].forEach((path) => {
         const key = path.dataset.expGlyphKey!;
-        const target = document.querySelector<HTMLElement>(`.exp__glyph[data-exp-glyph-key='${key}']`)!;
+        const target = document.querySelector<HTMLElement>(`#experience-title .heading__glyph[data-heading-glyph-key='${key}']`)!;
         const wordIndex = key.split("-")[1];
-        const baseline = document.querySelector<HTMLElement>(`[data-exp-glyph-baseline='${wordIndex}']`)!;
+        const baseline = document.querySelector<HTMLElement>(`#experience-title [data-heading-glyph-baseline='${wordIndex}']`)!;
         const match = path.getAttribute("transform")?.match(/translate\(([-\d.]+) ([-\d.]+)\) scale\(([-\d.]+)\)/);
         if (!match) {
           errors.push(Number.POSITIVE_INFINITY);
@@ -2793,7 +2793,7 @@ test("round 12: glyph exit descends straight and Experience headline is traced",
       return {
         maxExpAlignError: Math.max(...errors),
         expContourCount: document.querySelectorAll("[data-exp-glyph-contour]").length,
-        expGlyphCount: document.querySelectorAll(".exp__glyph").length,
+        expGlyphCount: document.querySelectorAll("#experience-title .heading__glyph").length,
         expConnectorCount: document.querySelectorAll("[data-glyph-connector][data-from-glyph^='exp-']").length,
         exitDepartMismatch: Math.round(exitDepartMismatch * 10) / 10,
         dropDx: dropDx === null ? null : Math.round(dropDx * 10) / 10,
@@ -2828,5 +2828,261 @@ test("round 12: glyph exit descends straight and Experience headline is traced",
     }));
     expect(completion.total, `exp contours at ${vp.width}px`).toBe(24);
     expect(completion.done, `exp trace completion at ${vp.width}px`).toBe(24);
+  }
+});
+
+test("round 12.1: headline traces complete while framed, connectors paint, key-14 joint is smooth", async ({ page }) => {
+  // Guards the round-12.1 fixes: (Bug 1) the Experience trace completes
+  // while the headline is still framed; (Bug 2/4) the C1/C2/C3
+  // connectors actually paint (computed stroke, not "none") and draw
+  // over a real scroll span instead of popping in over 1px; (Bug 3)
+  // the Sheet key-14 joint is a quarter-turn fillet, not a 90deg kink;
+  // (Bugs 5-7) the Projects/Skills/Contact headlines are traced on
+  // their outlines (true span/contour counts) and complete while framed.
+  // NOTE on the Skills count: the task text says 13/13 letters, but the
+  // true count is 15 spans / 16 contours ("USED WITH INTENT." is 17
+  // chars incl. spaces, 15 non-space letters; D has 2 contours).
+  const viewports = [
+    { width: 1920, height: 925 },
+    { width: 1440, height: 900 },
+  ];
+  const headlines = [
+    {
+      id: "exp", heading: "#experience-title", keyPrefix: "exp-",
+      contourAttr: "data-exp-glyph-key", contourDataset: "expGlyphKey",
+      contourCountAttr: "data-exp-glyph-contour",
+      spans: 20, contours: 24,
+    },
+    {
+      id: "proj", heading: "#projects-title", keyPrefix: "proj-",
+      contourAttr: "data-proj-glyph-key", contourDataset: "projGlyphKey",
+      contourCountAttr: "data-proj-glyph-contour",
+      spans: 9, contours: 12,
+    },
+    {
+      id: "skills", heading: "#skills-title", keyPrefix: "skills-",
+      contourAttr: "data-skills-glyph-key", contourDataset: "skillsGlyphKey",
+      contourCountAttr: "data-skills-glyph-contour",
+      spans: 15, contours: 16,
+    },
+    {
+      id: "contact", heading: "#contact-title", keyPrefix: "contact-",
+      contourAttr: "data-contact-glyph-key", contourDataset: "contactGlyphKey",
+      contourCountAttr: "data-contact-glyph-contour",
+      spans: 17, contours: 24,
+    },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")].reduce(
+        (t, p) => t + p.getTotalLength(),
+        0,
+      ) > 1000,
+    );
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = "auto";
+    });
+
+    // Bug 2/4: the runtime-created connectors must actually paint.
+    const paint = await page.evaluate(() => {
+      const out: Record<string, { stroke: string; width: string; fill: string }> = {};
+      for (const key of ["c1", "c2", "c3"]) {
+        const el = document.querySelector<SVGPathElement>(`[data-project-connector='${key}']`)!;
+        const cs = getComputedStyle(el);
+        out[key] = { stroke: cs.stroke, width: cs.strokeWidth, fill: cs.fill };
+      }
+      return out;
+    });
+    for (const key of ["c1", "c2", "c3"]) {
+      expect(paint[key]!.stroke, `${key} computed stroke at ${vp.width}x${vp.height}`).not.toBe("none");
+      expect(paint[key]!.width, `${key} computed stroke width at ${vp.width}x${vp.height}`).toBe("2px");
+      expect(paint[key]!.fill, `${key} computed fill at ${vp.width}x${vp.height}`).toBe("none");
+    }
+
+    // Bug 3: the Sheet key-14 joint is a quarter-turn fillet (G1), not a
+    // 90deg kink. Front paths 2 (descent) and 3 (exit) of the desktop
+    // front SVG must meet end-to-start, leave along the same tangent,
+    // and turn through a 20-30 unit quarter-turn.
+    const joint = await page.evaluate(() => {
+      type Pt = { x: number; y: number };
+      const paths = [...document.querySelectorAll<SVGPathElement>(
+        `[data-project-slug="sky-sheet-store"] svg[data-variant="desktop"][data-layer="thread-front"] .project-thread-path`,
+      )];
+      const parseD = (d: string) => {
+        const tokens = d.match(/[MLC]|[-+]?\d*\.?\d+/g) || [];
+        const cmds: { cmd: string; from: Pt; c1?: Pt; c2?: Pt; p: Pt }[] = [];
+        let i = 0;
+        let cmd = "";
+        let cur: Pt = { x: 0, y: 0 };
+        while (i < tokens.length) {
+          const t = tokens[i]!;
+          if (t === "M" || t === "L" || t === "C") {
+            cmd = t;
+            i++;
+            continue;
+          }
+          const x = Number.parseFloat(tokens[i]!);
+          const y = Number.parseFloat(tokens[i + 1]!);
+          i += 2;
+          if (cmd === "M") {
+            cur = { x, y };
+            cmds.push({ cmd: "M", from: cur, p: { x, y } });
+            cmd = "L";
+          } else if (cmd === "L") {
+            cmds.push({ cmd: "L", from: cur, p: { x, y } });
+            cur = { x, y };
+          } else if (cmd === "C") {
+            const c1 = { x, y };
+            const c2 = { x: Number.parseFloat(tokens[i]!), y: Number.parseFloat(tokens[i + 1]!) };
+            const p = { x: Number.parseFloat(tokens[i + 2]!), y: Number.parseFloat(tokens[i + 3]!) };
+            i += 4;
+            cmds.push({ cmd: "C", from: cur, c1, c2, p });
+            cur = p;
+          }
+        }
+        return cmds;
+      };
+      const descent = parseD(paths[2]!.getAttribute("d") || "");
+      const exit = parseD(paths[3]!.getAttribute("d") || "");
+      const lastDescent = descent[descent.length - 1]!;
+      const firstExit = exit.find((c) => c.cmd !== "M")!;
+      const exitStart = exit[0]!.p;
+      const sub = (a: Pt, b: Pt): Pt => ({ x: a.x - b.x, y: a.y - b.y });
+      const norm = (v: Pt): Pt => {
+        const l = Math.hypot(v.x, v.y) || 1;
+        return { x: v.x / l, y: v.y / l };
+      };
+      const endTan = norm(sub(lastDescent.p, lastDescent.c2!));
+      const startTan = norm(sub(firstExit.p, firstExit.from));
+      const angle = (Math.acos(Math.max(-1, Math.min(1, endTan.x * startTan.x + endTan.y * startTan.y))) * 180) / Math.PI;
+      return {
+        continuous: Math.hypot(lastDescent.p.x - exitStart.x, lastDescent.p.y - exitStart.y),
+        angleDeg: Math.round(angle * 10) / 10,
+        turnRx: lastDescent.p.x - lastDescent.from.x,
+        turnRy: lastDescent.p.y - lastDescent.from.y,
+        approachVertical: Math.abs(lastDescent.c1!.x - lastDescent.from.x),
+        departHorizontal: Math.abs(lastDescent.c2!.y - lastDescent.p.y),
+      };
+    });
+    expect(joint.continuous, `key-14 joint continuity at ${vp.width}x${vp.height}`).toBeLessThanOrEqual(0.01);
+    expect(joint.angleDeg, `key-14 joint angle at ${vp.width}x${vp.height}`).toBeLessThanOrEqual(2);
+    expect(joint.turnRx, `key-14 fillet radius x at ${vp.width}x${vp.height}`).toBeGreaterThanOrEqual(20);
+    expect(joint.turnRx, `key-14 fillet radius x at ${vp.width}x${vp.height}`).toBeLessThanOrEqual(30);
+    expect(joint.turnRy, `key-14 fillet radius y at ${vp.width}x${vp.height}`).toBeGreaterThanOrEqual(20);
+    expect(joint.turnRy, `key-14 fillet radius y at ${vp.width}x${vp.height}`).toBeLessThanOrEqual(30);
+    expect(joint.approachVertical, `key-14 approach verticality at ${vp.width}x${vp.height}`).toBeLessThanOrEqual(0.01);
+    expect(joint.departHorizontal, `key-14 departure horizontality at ${vp.width}x${vp.height}`).toBeLessThanOrEqual(0.01);
+
+    // Bug 2/4: each connector must draw over a real scroll span
+    // (at least 150px), not pop 0 to 1 in 1px. One sweep reads all
+    // three dasharrays per step.
+    const readConnectorProgress = () =>
+      page.evaluate(() => {
+        const out: Record<string, number> = {};
+        for (const key of ["c1", "c2", "c3"]) {
+          const el = document.querySelector<SVGPathElement>(`[data-project-connector='${key}']`)!;
+          const dash = el.style.strokeDasharray;
+          const len = el.getTotalLength();
+          if (dash === "none") out[key] = 1;
+          else if (!dash || dash.startsWith("0 ")) out[key] = 0;
+          else out[key] = Math.min(1, Number.parseFloat(dash.split(" ")[0]!) / len);
+        }
+        return out;
+      });
+    const spans: Record<string, { start: number | null; end: number | null }> = {
+      c1: { start: null, end: null },
+      c2: { start: null, end: null },
+      c3: { start: null, end: null },
+    };
+    for (let y = 3800; y <= 7200; y += 25) {
+      await page.evaluate((yy) => window.scrollTo(0, yy), y);
+      await page.waitForTimeout(40);
+      const prog = await readConnectorProgress();
+      for (const key of ["c1", "c2", "c3"]) {
+        const s = spans[key]!;
+        if (s.start === null && prog[key]! > 0) s.start = y;
+        if (s.start !== null && s.end === null && prog[key]! >= 1) s.end = y;
+      }
+    }
+    for (const key of ["c1", "c2", "c3"]) {
+      const s = spans[key]!;
+      expect(s.start, `${key} draw start at ${vp.width}x${vp.height}`).not.toBeNull();
+      expect(s.end, `${key} draw end at ${vp.width}x${vp.height}`).not.toBeNull();
+      expect(s.end! - s.start!, `${key} draw span at ${vp.width}x${vp.height}`).toBeGreaterThanOrEqual(150);
+    }
+
+    // The sweep scrolled every section through the viewport, so all
+    // reveals have played after one wait; alignment is measured in the
+    // revealed state.
+    await page.waitForTimeout(2500);
+
+    for (const h of headlines) {
+      // Counts, alignment (same method as the round-12 exp check, scoped
+      // to this heading), and zero visible inter-letter connectors.
+      const geom = await page.evaluate((hh) => {
+        const errors: number[] = [];
+        [...document.querySelectorAll<SVGPathElement>(`[${hh.contourCountAttr}]`)].forEach((path) => {
+          const key = (path.dataset as Record<string, string | undefined>)[hh.contourDataset]!;
+          const target = document.querySelector<HTMLElement>(
+            `${hh.heading} .heading__glyph[data-heading-glyph-key='${key}']`,
+          )!;
+          const wordIndex = key.split("-")[1];
+          const baseline = document.querySelector<HTMLElement>(
+            `${hh.heading} [data-heading-glyph-baseline='${wordIndex}']`,
+          )!;
+          const match = path.getAttribute("transform")?.match(/translate\(([-\d.]+) ([-\d.]+)\) scale\(([-\d.]+)\)/);
+          if (!match) {
+            errors.push(Number.POSITIVE_INFINITY);
+            return;
+          }
+          errors.push(Math.abs(Number(match[1]) - (target.getBoundingClientRect().left + scrollX)));
+          errors.push(Math.abs(Number(match[2]) - (baseline.getBoundingClientRect().top + scrollY)));
+          errors.push(Math.abs(Number(match[3]) - Number.parseFloat(getComputedStyle(target).fontSize) / 1000));
+        });
+        return {
+          maxAlignError: Math.max(...errors),
+          contourCount: document.querySelectorAll(`[${hh.contourCountAttr}]`).length,
+          spanCount: document.querySelectorAll(`${hh.heading} .heading__glyph`).length,
+          connectorCount: document.querySelectorAll(
+            `[data-glyph-connector][data-from-glyph^='${hh.keyPrefix}']`,
+          ).length,
+        };
+      }, h);
+      expect(geom.spanCount, `${h.id} glyph spans at ${vp.width}x${vp.height}`).toBe(h.spans);
+      expect(geom.contourCount, `${h.id} contours at ${vp.width}x${vp.height}`).toBe(h.contours);
+      expect(geom.connectorCount, `${h.id} visible connectors at ${vp.width}x${vp.height}`).toBe(0);
+      expect(geom.maxAlignError, `${h.id} alignment error at ${vp.width}x${vp.height}`).toBeLessThan(0.001);
+
+      // Bugs 1, 5-7: the trace must complete while the headline is
+      // still framed (headline top still inside the viewport).
+      const headingTop = await page.evaluate(
+        (sel) => document.querySelector<HTMLElement>(sel)!.getBoundingClientRect().top + scrollY,
+        h.heading,
+      );
+      let completedWhileFramed = false;
+      let doneAtEnd = 0;
+      for (let y = Math.max(0, Math.floor(headingTop - vp.height + 100)); y <= headingTop + 300; y += 100) {
+        await page.evaluate((yy) => window.scrollTo(0, yy), y);
+        await page.waitForTimeout(40);
+        const state = await page.evaluate((hh) => ({
+          done: [...document.querySelectorAll<SVGPathElement>(`[${hh.contourCountAttr}]`)].filter(
+            (p) => p.style.strokeDasharray === "none",
+          ).length,
+          total: document.querySelectorAll(`[${hh.contourCountAttr}]`).length,
+          headingTopViewport: document.querySelector<HTMLElement>(hh.heading)!.getBoundingClientRect().top,
+        }), h);
+        doneAtEnd = state.done;
+        if (state.done === state.total && state.headingTopViewport > 0) {
+          completedWhileFramed = true;
+          break;
+        }
+      }
+      expect(completedWhileFramed, `${h.id} trace completes while framed at ${vp.width}x${vp.height}`).toBe(true);
+      expect(doneAtEnd, `${h.id} trace completion at ${vp.width}x${vp.height}`).toBe(h.contours);
+    }
   }
 });

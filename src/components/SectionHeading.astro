@@ -5,13 +5,15 @@ interface Props {
   eyebrow: string;
   title: string;
   italicWord?: string;
-  // Round 12: when true, the italic (outlined) word is split into per-char
-  // spans so the site thread can trace its outlines like the About glyphs.
-  // Only the Experience heading sets this; other headings are untouched.
-  traceItalic?: boolean;
+  // Round 12.1: the trace id ("exp", "proj", "skills", ...). When set,
+  // the italic (outlined) word is split into per-char spans so the site
+  // thread can trace its outlines like the About glyphs. The id prefixes
+  // every glyph key: `<id>-<word>-<char>`. Experience, Projects and
+  // Skills set this; other headings are untouched.
+  traceWord?: string;
 }
 
-const { id, index, eyebrow, title, italicWord, traceItalic } = Astro.props;
+const { id, index, eyebrow, title, italicWord, traceWord } = Astro.props;
 ---
 
 <header class="section-heading" data-reveal data-display-heading>
@@ -25,17 +27,17 @@ const { id, index, eyebrow, title, italicWord, traceItalic } = Astro.props;
     {italicWord && (
       <em>
         {" "}
-        {traceItalic ? (
+        {traceWord ? (
           italicWord
             .trim()
             .split(" ")
             .map((word, wordIndex) => (
               <>
-                <span class="exp__trace-word" data-exp-glyph-word={wordIndex}>
+                <span class="heading__trace-word" data-heading-glyph-word={wordIndex}>
                   {[...word.toUpperCase()].map((char, charIndex) => (
-                    <span class="exp__glyph" data-exp-glyph-key={`exp-${wordIndex}-${charIndex}`} data-exp-glyph-char={char}>{char}</span>
+                    <span class="heading__glyph" data-heading-glyph-key={`${traceWord}-${wordIndex}-${charIndex}`} data-heading-glyph-char={char}>{char}</span>
                   ))}
-                  <span class="exp__glyph-baseline" data-exp-glyph-baseline={wordIndex} aria-hidden="true"></span>
+                  <span class="heading__glyph-baseline" data-heading-glyph-baseline={wordIndex} aria-hidden="true"></span>
                 </span>
                 {wordIndex < italicWord.trim().split(" ").length - 1 && " "}
               </>
@@ -97,9 +99,9 @@ const { id, index, eyebrow, title, italicWord, traceItalic } = Astro.props;
     -webkit-text-stroke: 1px rgba(239, 237, 230, 0.55);
   }
 
-  .exp__trace-word { white-space: nowrap; }
-  .exp__glyph { display: inline; }
-  .exp__glyph-baseline { display: inline-block; width: 0; height: 0; overflow: hidden; line-height: 0; vertical-align: baseline; }
+  .heading__trace-word { white-space: nowrap; }
+  .heading__glyph { display: inline; }
+  .heading__glyph-baseline { display: inline-block; width: 0; height: 0; overflow: hidden; line-height: 0; vertical-align: baseline; }
 
   @media (max-width: 768px) {
     .section-heading {

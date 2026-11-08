@@ -7,7 +7,7 @@ import Projects from "../components/Projects.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import SkillsEducation from "../components/SkillsEducation.astro";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { ABOUT_GLYPH_INSTANCES, EXP_GLYPH_INSTANCES } from "../data/about-glyphs";
+import { ABOUT_GLYPH_INSTANCES, CONTACT_GLYPH_INSTANCES, EXP_GLYPH_INSTANCES, PROJ_GLYPH_INSTANCES, SKILLS_GLYPH_INSTANCES } from "../data/about-glyphs";
 
 const title = "HerokeyVN — Backend Developer | Node.js & TypeScript";
 const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh City building Node.js and TypeScript systems, identity services, and practical applications.";
@@ -29,6 +29,15 @@ const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh 
       )))}
       {EXP_GLYPH_INSTANCES.map((glyph) => glyph.contours.map((d, contourIndex) => (
         <path data-exp-glyph-key={glyph.key} data-exp-glyph-contour={contourIndex} d={d}></path>
+      )))}
+      {PROJ_GLYPH_INSTANCES.map((glyph) => glyph.contours.map((d, contourIndex) => (
+        <path data-proj-glyph-key={glyph.key} data-proj-glyph-contour={contourIndex} d={d}></path>
+      )))}
+      {SKILLS_GLYPH_INSTANCES.map((glyph) => glyph.contours.map((d, contourIndex) => (
+        <path data-skills-glyph-key={glyph.key} data-skills-glyph-contour={contourIndex} d={d}></path>
+      )))}
+      {CONTACT_GLYPH_INSTANCES.map((glyph) => glyph.contours.map((d, contourIndex) => (
+        <path data-contact-glyph-key={glyph.key} data-contact-glyph-contour={contourIndex} d={d}></path>
       )))}
       <g data-glyph-connectors></g>
       <circle data-glyph-thread-end r="4"></circle>
@@ -60,7 +69,14 @@ const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh 
     .site-thread { z-index: 3; }
     .glyph-thread { z-index: 5; }
 
-    .site-thread path,
+    /* Round 12.1: both path selectors are :global so runtime-created
+       paths paint too. The site-thread rule used to be scoped
+       (`.site-thread path` compiled to `path[data-astro-cid-...]`), which
+       never matched the C1/C2/C3 connector paths created with
+       createElementNS in site-thread.ts - they rendered with stroke none
+       and were invisible even when fully drawn. The glyph-thread rule
+       already used :global(path), which is why glyph connectors painted. */
+    .site-thread :global(path),
     .glyph-thread :global(path) {
       fill: none;
       stroke: var(--accent-red);
@@ -74,7 +90,7 @@ const description = "Portfolio of HerokeyVN, a backend developer in Ho Chi Minh 
     .glyph-thread circle { fill: var(--accent-red); }
 
     @media (max-width: 700px) {
-      .site-thread path,
+      .site-thread :global(path),
       .glyph-thread :global(path) { stroke-width: 1.7px; }
     }
 

@@ -16,6 +16,18 @@ export const ABOUT_GLYPHS: Record<string, { advance: number; contours: string[] 
   "'": { advance: 230, contours: ["M191-567L149-443L80-443L39-567L39-653L191-653L191-567Z"] },
   T: { advance: 722, contours: ["M20-536L20-647L702-647L702-536L428-536L428 0L295 0L295-536L20-536Z"] },
   ".": { advance: 271, contours: ["M60-114L211-114L211 0L60 0L60-114Z"] },
+  // Round 12.1: the letters the three new headline traces need, extracted
+  // from the same @fontsource/syne Syne 700 Latin WOFF with the same
+  // pipeline as the Round 12 letters above (RecordingPen ops, y negated,
+  // qCurveTo expanded with implied midpoints, no duplicates, 1000 upm).
+  // Verified byte-identical reproduction of the stored A, C, F, I, M.
+  G: { advance: 914, contours: ["M449 13Q359 13 286.50-8Q214-29 161.50-71Q109-113 81-175Q53-237 53-318Q53-400 82.50-463.50Q112-527 166.50-571Q221-615 296.50-637.50Q372-660 464-660Q573-660 652-629.50Q731-599 776.50-544Q822-489 828-413L700-413Q687-453 657.50-482.50Q628-512 580-528.50Q532-545 464-545Q377-545 315.50-517Q254-489 222-438Q190-387 190-318Q190-251 218-202.50Q246-154 304.50-128Q363-102 454-102Q524-102 577.50-120.50Q631-139 667-171Q698-197 713-230L465-230L465-315L851-315L851 0L736 0Q736-31 740-71.50Q744-112 750-154Q752-169 754-183Q730-108 673-59Q588 13 449 13Z"] },
+  B: { advance: 780, contours: ["M77 0L77-647L450-647Q580-647 647.50-603.50Q715-560 715-474Q715-419 688-387.50Q661-356 612-341Q582-332 545-327Q569-325 592-322Q635-316 668-300Q701-284 720-255.50Q739-227 739-181Q739-121 707-81.50Q675-42 618-22Q561-2 486 0Z", "M210-110L472-110Q535-110 569-130.50Q603-151 603-196Q603-229 583-244Q563-259 530-262.50Q497-266 459-266L210-266Z", "M210-373L445-373Q508-373 542-391.50Q576-410 576-455Q576-500 542-518.50Q508-537 452-537L210-537Z"] },
+  L: { advance: 687, contours: ["M210-647L210-111L640-111L640 0L77 0L77-647Z"] },
+  W: { advance: 1300, contours: ["M293 0L20-647L167-647L376-128L575-647L728-647L927-128L1136-647L1280-647L1010 0L847 0L652-507L456 0Z"] },
+  H: { advance: 895, contours: ["M685-647L818-647L818 0L685 0L685-269L210-269L210 0L77 0L77-647L210-647L210-380L685-380Z"] },
+  Y: { advance: 740, contours: ["M721-647L437-204L437 0L303 0L303-204L19-647L173-647L372-325L567-647Z"] },
+  P: { advance: 784, contours: ["M208-210L208 0L75 0L75-647L476-647Q530-647 577.50-634Q625-621 660.50-594Q696-567 716-525Q736-483 736-424Q736-366 716-325Q696-284 660.50-258.50Q625-233 577.50-221.50Q530-210 476-210Z", "M208-316L488-316Q541-316 572-344.50Q603-373 603-424Q603-477 572-505Q541-533 488-533L208-533Z"] },
 };
 
 export const ABOUT_GLYPH_INSTANCES = ABOUT_TRACE_WORDS.flatMap((word, wordIndex) =>
@@ -113,6 +125,28 @@ export const EXP_TRACE_WORDS = ["MEETS", "INFRASTRUCTURE."] as const;
 export const EXP_GLYPH_INSTANCES = EXP_TRACE_WORDS.flatMap((word, wordIndex) =>
   [...word].map((char, charIndex) => ({ key: `exp-${wordIndex}-${charIndex}`, char, contours: ABOUT_GLYPHS[char]!.contours })),
 );
+
+// Round 12.1: the three new headline traces (Projects "TANGIBLE.", Skills
+// "USED WITH INTENT.", Contact "YOUR PRODUCT NEEDS."). Words are already
+// split on spaces, so no space character ever gets a span or a contour -
+// the trace skips the gaps between words with hidden travel, exactly as
+// the About/Experience traces skip unlisted inter-letter pairs. No
+// visible transitions are defined for these three headlines: every
+// inter-letter hop is hidden, so no glyph-connector element is created
+// for them (findTransition is left unset in their trace configs).
+const instancesFor = (prefix: string, words: readonly string[]) =>
+  words.flatMap((word, wordIndex) =>
+    [...word].map((char, charIndex) => ({ key: `${prefix}-${wordIndex}-${charIndex}`, char, contours: ABOUT_GLYPHS[char]!.contours })),
+  );
+
+export const PROJ_TRACE_WORDS = ["TANGIBLE."] as const;
+export const PROJ_GLYPH_INSTANCES = instancesFor("proj", PROJ_TRACE_WORDS);
+
+export const SKILLS_TRACE_WORDS = ["USED", "WITH", "INTENT."] as const;
+export const SKILLS_GLYPH_INSTANCES = instancesFor("skills", SKILLS_TRACE_WORDS);
+
+export const CONTACT_TRACE_WORDS = ["YOUR", "PRODUCT", "NEEDS."] as const;
+export const CONTACT_GLYPH_INSTANCES = instancesFor("contact", CONTACT_TRACE_WORDS);
 
 export const EXP_GLYPH_TRANSITIONS: GlyphTransition[] = [
   // Pair 1 in MEETS: E (exp-0-1) -> E (exp-0-2), same side points as the

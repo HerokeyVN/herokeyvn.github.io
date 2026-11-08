@@ -296,6 +296,38 @@ Known issues (reported, not fixed - no code change):
 - Mobile "INFRASTRUCTURE." headline overflow: pre-existing layout defect found by A1; needs Key's decision, NOT fixed here.
 - Mobile Piano belt touches L before L lights: carried over from Phase 4 (see above); unchanged by round 12.
 
+## Round 12.1: live-bug fixes (Key feedback 2026-11-08 23:57-2026-11-09 00:03, 7 bugs)
+
+Root causes (all reproduced live on the Ubuntu dev server, HEAD 9813520, 1920x1080 + 1440x900, zero page/console errors; repro shots in `~/workspace/portfolio-check/round121-repro-{1..7}-before.png`):
+
+- Bug 1 - Experience trace "stalls": NOT a stall, a TIMING/FRAMING defect. The exp window ended only when the last line sat at 34% viewport height, so the trace completed at scrollY ~2850-2900, by which time the headline top was 230-280px above the viewport. Progress was strictly monotonic (100px fine sweep: 1/24 at 2200, 10/24 at 2500, 24/24 at 2900), no dead zone. Fix: the trace window now ends when the last line's bottom reaches 72% viewport height (`headlineTraceWindow` in the new shared module), so the trace completes while the headline is still framed.
+- Bug 2 - C1 connector missing: TWO defects. (a) TIMING: the article trigger windows overlap by 250px (128px inter-article gap < 0.35*winH), so C1's window [4788.8, 4538.8] was INVERTED and setTiming clamped it to 1px: C1 popped 0 to 1 in 1px of scroll. Same for C2. (b) PAINTING (dominant): runtime-created connector paths via createElementNS lack Astro's scope attribute, so the scoped `.site-thread path` rule never matched them; computed stroke was "none", fill black. Fix: (a) each stage's artEnd is clamped to at most the next stage's artStart minus MIN_CONNECTOR_SPAN (200px), so every connector gets a real scroll span; (b) the site-thread stroke rule moved to `.site-thread:global(path)` in `src/pages/index.astro` (same pattern the glyph-thread rule already used), so runtime-created paths match.
+- Bug 3 - key-14 kink (Sheet Store practice strip, NOT Piano): the descent front-2 ended at (1347,522) and the exit front-3 left due east - a 90deg joint with zero fillet radius. This was the documented round-11 exception ("90deg touch-point turn"); the exception is REMOVED by this fix. Fix: front-2 now ends with a quarter-turn cubic (r=26, k=0.5523*26) from (1347,496) to (1373,522), front-3 starts at (1373,522); the stage end dot moved from (1436,520) to (1436,522) so it sits on the thread line. G1 by construction.
+- Bug 4 - C3 connector missing: same family as Bug 2. C3's window was only 52px and started only at piano p=1.0 while the belt visually completes at p=0.85, so between belt completion and the C3 window the user saw a finished belt, an exit dot and an empty gap; plus the same painting defect. Fix: C3 now starts at the Piano belt's last-path end (piano p=0.85) and the chain end is pushed out so C3 keeps at least MIN_CONNECTOR_SPAN (200px); plus the Bug 2 stroke fix.
+- Bugs 5-7 - headline tracing missing (by design, not yet implemented): no code traced TANGIBLE. / USED WITH INTENT. / YOUR PRODUCT NEEDS. Fix: the shared headline-tracing helper `src/scripts/headline-trace.ts` is now used for all FOUR headlines (Experience + these three). New glyph contours extracted from the same Syne 700 WOFF with the verified Round-12 pipeline (G, B, L, W, H, Y, P). SectionHeading generalized (`traceItalic` -> `traceWord`, `.heading__glyph`, `data-heading-glyph-key`); Contact renders per-char spans the same way. Chain wiring: at each headline the site segment leaves the gutter (hidden travel), traces the outlined word, returns to the gutter; after Contact the thread ends gracefully at the footer (site-5 runs to the email link, head dot parks there). True counts (the task text has an arithmetic error): TANGIBLE. 9 spans / 12 contours; USED WITH INTENT. 15 spans / 16 contours (17 chars incl. spaces, 15 non-space; D has 2 contours) - NOT 13/13; YOUR PRODUCT NEEDS. 17 spans / 24 contours. New headlines create ZERO visible inter-letter connectors (all hops are hidden travel).
+
+Shared helper (`src/scripts/headline-trace.ts`, consumed by `src/scripts/site-thread.ts`):
+
+- `createHeadlineTracer(deps)` returns `{ collectAndBuild, traceHeadline }`; `headlineTraceWindow()` computes [start, end] with the Bug-1 timing fix. Glyph machinery (collectGlyphs, buildGlyphGroup, findJunction, createConnector, contour tangents) moved verbatim from site-thread.ts; the baseline lookup is scoped to the heading element (baseline word indices repeat across headlines, so a document-wide lookup would resolve every headline against Experience's baselines). `pointInSiteSpace` stays defined once in site-thread.ts and is passed in as a dep (shared with the hero exit tangent).
+- `site-thread.ts` now wires: About (snake, exit fractions) -> Exp [s3, sExp] -> site-2 -> Proj [sProjStart, sProjEnd] (end capped 60px before the E2EE article window so C0 keeps a real span) -> C0 -> chain (clamped artEnds, C3 from belt completion) -> Skills -> site-4 -> Contact -> site-5 (footer anchor). Fallback (no chain) keeps the old Projects gutter run between the Proj and Skills traces.
+- Trade-off accepted for Bug 2a: the stage thread completes earlier than its DOM choreography (E2EE thread done at DOM p~0.42, Sheet at ~0.60); stages still START in sync with the DOM, which is what entry continuity needs.
+
+Tests (`tests/portfolio.spec.ts`):
+
+- Round-12 test updated for the renamed selectors (`.exp__glyph` -> `#experience-title .heading__glyph`, `data-exp-glyph-baseline` -> `#experience-title [data-heading-glyph-baseline]`); contour attributes are unchanged.
+- New test "round 12.1: headline traces complete while framed, connectors paint, key-14 joint is smooth": computed stroke/width/fill on C1/C2/C3; key-14 joint continuity, angle <= 2deg, fillet radius 20-30 in x and y, vertical approach, horizontal departure; connector draw spans >= 150px (25px-step sweep); per-headline spans/contours (exp 20/24, proj 9/12, skills 15/16, contact 17/24), alignment error < 0.001, 0 visible connectors, trace completes while the headline is framed (100px fine sweep at 1920x925 and 1440x900).
+
+Verification status (2026-11-09, fix agent - VM BUILD BLOCKED by EPERM, verification moved to Ubuntu):
+
+- `npm run check`: PASS, 0 errors / 0 warnings / 7 hints (after all edits, including the test).
+- `npm run build` (VM): BLOCKED by the EPERM fault (rolldown write fails on `dist/.prerender/prerender-entry.BKgkpXxK.mjs`, Operation not permitted; 4 attempts 18:20-18:24 UTC, including after `rm -rf dist`). Build + full Playwright suite to be run on the Ubuntu laptop after pull (no EPERM fault there).
+- Live screenshots: to be captured on the Ubuntu dev server after pull (same scroll positions as the repro shots, 1920x1080 and 1920x925), saved as `~/workspace/portfolio-check/motif8-fix-*.png`.
+
+Known issues (unchanged):
+
+- Mobile "INFRASTRUCTURE." headline overflow: pre-existing layout defect; needs Key's decision, NOT fixed here.
+- Mobile Piano belt touches L before L lights: carried over from Phase 4; unchanged by round 12.1.
+
 ## Automated verification evidence
 
 - Verification commands:

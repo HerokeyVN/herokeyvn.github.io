@@ -1,28 +1,14 @@
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { dashSetter } from "./project-threads";
-import { ABOUT_EXIT_JUNCTION_FRACTIONS, findExpTransition, findTransition, type AnchorPreference, type GlyphTransition } from "../data/about-glyphs";
-
-type Segment = {
-  element?: SVGPathElement;
-  drawLength: number;
-  weight: number;
-  startDistance: number;
-  kind: "open" | "closed" | "hidden";
-  layer: "site" | "glyph";
-  startScroll: number;
-  endScroll: number;
-  // Round 12: stage paths are driven by the CTM-scaled dashSetter
-  // (round-8 fix) instead of the site thread's user-unit dash, because
-  // their SVGs use vector-effect: non-scaling-stroke.
-  setDash?: (progress: number) => void;
-  // Round 12: a stage path on the thread-back layer runs behind a
-  // foreground structure; the head dot hides while it draws, so the dot
-  // never floats over a frame the thread passes behind.
-  occluded?: boolean;
-};
-type Junction = { x: number; y: number; distance: number };
-type GlyphRecord = { key: string; left: number; top: number; baselineY: number; scale: number; paths: SVGPathElement[]; junctions: Junction[]; lineIndex: number };
+import { ABOUT_EXIT_JUNCTION_FRACTIONS, findExpTransition, findTransition } from "../data/about-glyphs";
+// Round 12.1: the glyph/headline machinery (Segment, Junction,
+// GlyphRecord, collectGlyphs, buildGlyphGroup, findJunction,
+// createConnector) moved to src/scripts/headline-trace.ts, the shared
+// helper that traces all four headlines (About, Experience, Projects,
+// Skills, Contact). site-thread.ts keeps the site chain, the stage
+// windows, and the headline window/chain wiring.
+import { createHeadlineTracer, type Segment } from "./headline-trace";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 // Round 12: per-scene stage geometry for the unified thread. Entry/exit
@@ -181,29 +167,9 @@ export function initSiteThread() {
     return new DOMPoint(point.x, point.y).matrixTransform(pathMatrix).matrixTransform(siteMatrix.inverse());
   };
 
-  // One-sided contour tangents at a junction (closed contour, so the
-  // samples wrap). The thread arrives at a junction along contourArrival
-  // and leaves along contourDeparture; at a sharp corner they differ, and
-  // a centred average would point diagonally across the corner (the "."
-  // junction measured 45deg that way, while its true arrival is straight
-  // up). Connectors depart along the arrival direction and arrive along
-  // the departure direction; the site-1 exit departs along the arrival
-  // direction.
-  const contourTangentAt = (path: SVGPathElement, distance: number, forward: boolean) => {
-    const length = path.getTotalLength();
-    if (length <= 0) return { x: 1, y: 0 };
-    const eps = Math.min(12, length / 4);
-    const at = forward ? distance : (distance - eps + length) % length;
-    const to = forward ? (distance + eps) % length : distance;
-    const a = pointInSiteSpace(path, at);
-    const b = pointInSiteSpace(path, to);
-    if (!a || !b) return { x: 1, y: 0 };
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const len = Math.hypot(dx, dy);
-    return len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-  };
-  const contourArrival = (path: SVGPathElement, distance: number) => contourTangentAt(path, distance, false);
-  const contourDeparture = (path: SVGPathElement, distance: number) => contourTangentAt(path, distance, true);
+  // Round 12.1: the one-sided contour tangents (contourArrival /
+  // contourDeparture) moved to headline-trace.ts with the connector
+  // builder that uses them.
   // End tangent of a hero segment. getTotalLength() returns the real length
   // in user units (measured 719.5 for seg-2: pathLength="1" does NOT
   // rescale it in this browser), so the samples are the last few absolute
@@ -306,93 +272,9 @@ export function initSiteThread() {
     gsap.set(activeEnd, { autoAlpha: 1 }); gsap.set(inactiveEnd, { autoAlpha: 0 });
   };
 
-  const findJunction = (
-    path: SVGPathElement,
-    originX: number,
-    baselineY: number,
-    scale: number,
-    pref?: AnchorPreference,
-  ): Junction => {
-    const length = path.getTotalLength();
-    const samples = 120;
-    const mode = pref?.mode ?? "top";
+  // Round 12.1: findJunction and createConnector moved to
+  // headline-trace.ts with the rest of the glyph machinery.
 
-    if (mode === "fraction") {
-      const distance = length * Math.max(0, Math.min(1, pref?.fraction ?? 0));
-      const point = path.getPointAtLength(distance);
-      return { x: originX + point.x * scale, y: baselineY + point.y * scale, distance };
-    }
-
-    let best = { x: 0, y: 0, distance: 0 };
-    let bestMetric = (mode === "top" || mode === "left") ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
-
-    for (let i = 0; i <= samples; i++) {
-      const distance = (length * i) / samples;
-      const point = path.getPointAtLength(distance);
-      const metric = (mode === "top" || mode === "bottom") ? point.y : point.x;
-      if (mode === "top" || mode === "left") {
-        if (metric < bestMetric) {
-          bestMetric = metric;
-          best = { x: point.x, y: point.y, distance };
-        }
-      } else {
-        if (metric > bestMetric) {
-          bestMetric = metric;
-          best = { x: point.x, y: point.y, distance };
-        }
-      }
-    }
-    return { x: originX + best.x * scale, y: baselineY + best.y * scale, distance: best.distance };
-  };
-
-  const createConnector = (
-    fromGlyph: GlyphRecord,
-    toGlyph: GlyphRecord,
-    from: Junction,
-    to: Junction,
-    sameLine: boolean,
-    fontSize: number,
-    trans?: GlyphTransition,
-  ): Segment => {
-    const isVisible = Boolean(sameLine && trans && trans.visibility === "visible");
-    if (!isVisible) {
-      return {
-        drawLength: 0,
-        weight: Math.max(fontSize * 0.22, Math.hypot(to.x - from.x, to.y - from.y) * 0.18),
-        startDistance: 0,
-        kind: "hidden",
-        layer: "glyph",
-        startScroll: 0,
-        endScroll: 1,
-      };
-    }
-    const element = document.createElementNS(SVG_NS, "path");
-    element.dataset.glyphConnector = "";
-    element.setAttribute("data-from-glyph", fromGlyph.key);
-    element.setAttribute("data-to-glyph", toGlyph.key);
-    // Round 11: the connector departs along the from-contour's travel
-    // direction at the junction and arrives along the to-contour's travel
-    // direction, so it meets each glyph outline tangentially (G1) instead
-    // of leaving/arriving horizontally with a ~90deg kink at both ends.
-    // The handle scales with the chord (up to 26px): the old 8px minimum
-    // made a tall bump over the tiny 7-8px inter-letter gaps (length ratio
-    // ~2.0, failing the glyph test's 1.4 cap), and even a 2px floor kept
-    // mobile's 3.8px gaps at 1.43, so small gaps now get a shallow arch
-    // instead. x stays monotonic because both control points sit on the
-    // junctions' verticals.
-    const chord = Math.hypot(to.x - from.x, to.y - from.y);
-    const handle = Math.min(26, chord * 0.35);
-    const vFrom = contourArrival(fromGlyph.paths[0]!, from.distance);
-    const vTo = contourDeparture(toGlyph.paths[0]!, to.distance);
-    const cp1x = from.x + vFrom.x * handle;
-    const cp1y = from.y + vFrom.y * handle;
-    const cp2x = to.x - vTo.x * handle;
-    const cp2y = to.y - vTo.y * handle;
-    element.setAttribute("d", `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`);
-    connectorGroup.append(element);
-    const length = element.getTotalLength();
-    return { element, drawLength: length, weight: length, startDistance: 0, kind: "open", layer: "glyph", startScroll: 0, endScroll: 1 };
-  };
 
   const build = () => {
     const width = document.documentElement.clientWidth;
@@ -406,127 +288,81 @@ export function initSiteThread() {
     connectorGroup.replaceChildren();
 
     const isMobile = width <= 700;
-    // Round 12: glyph collection is shared by the About headline and the
-    // Experience headline (same contour/transform/connector mechanism,
-    // different span/path selectors and transition plans).
-    const collectGlyphs = (
-      spanSelector: string,
-      keyAttr: string,
-      keyDataset: "glyphKey" | "expGlyphKey",
-      contourDataset: "glyphContour" | "expGlyphContour",
-      baselineAttr: string,
-      wordPart: number,
-    ): GlyphRecord[] =>
-      [...document.querySelectorAll<HTMLElement>(spanSelector)].map((element) => {
-        const key = element.dataset[keyDataset]!;
-        const wordIndex = Number(key.split("-")[wordPart]);
-        const baseline = document.querySelector<HTMLElement>(`[${baselineAttr}='${wordIndex}']`)!;
-        const box = docBox(element), baselineBox = docBox(baseline);
-        const scale = Number.parseFloat(getComputedStyle(element).fontSize) / 1000;
-        const originX = box.left, baselineY = baselineBox.top;
-        const glyphPaths = [...glyphSvg.querySelectorAll<SVGPathElement>(`path[${keyAttr}='${key}']`)].sort((a, b) => Number(a.dataset[contourDataset]) - Number(b.dataset[contourDataset]));
-        glyphPaths.forEach((path) => path.setAttribute("transform", `translate(${originX} ${baselineY}) scale(${scale})`));
-        return {
-          key,
-          left: originX,
-          top: box.top,
-          baselineY,
-          scale,
-          paths: glyphPaths,
-          junctions: [],
-          lineIndex: 0,
-        };
-      });
-    // Group measured glyphs into rendered lines, resolve each outer
-    // contour's junction, and build the ordered contour/connector/hidden
-    // segments for one headline. `snake` reverses even lines (About);
-    // `lastFractions` overrides the last glyph's junction by key (the
-    // About exit corner: "." on two/three lines, "U" on one line).
-    const buildGlyphGroup = (
-      rawGlyphs: GlyphRecord[],
-      groupFontSize: number,
-      findTrans: (from: string, to: string, isMobile: boolean) => GlyphTransition | undefined,
-      snake: boolean,
-      lastFractions?: Record<string, number>,
-    ): { order: GlyphRecord[]; segments: Segment[] } => {
-      const lines: GlyphRecord[][] = [];
-      [...rawGlyphs].sort((a, b) => a.top - b.top || a.left - b.left).forEach((glyph) => { const line = lines.find((items) => Math.abs(items[0]!.top - glyph.top) < 4); line ? line.push(glyph) : lines.push([glyph]); });
-      lines.forEach((line, lineIndex) => { line.forEach((glyph) => { glyph.lineIndex = lineIndex; }); line.sort((a, b) => a.left - b.left); if (snake && lineIndex % 2 === 0) line.reverse(); });
-      const order = lines.flat();
-      order.forEach((glyph, i) => {
-        const prev = order[i - 1];
-        const next = order[i + 1];
-        let pref: AnchorPreference | undefined;
+    // Round 12.1: the shared headline tracer (headline-trace.ts) owns
+    // glyph collection, line grouping, junction resolution and the
+    // contour/connector segments for every headline. The span attribute
+    // is the shared data-heading-glyph-key (SectionHeading / Contact
+    // emit it for every traced headline); the contour attribute stays
+    // per-headline (data-exp-glyph-key, data-proj-glyph-key, ...). The
+    // baseline lookup is scoped to the heading element: baseline word
+    // indices repeat across headlines, so a document-wide lookup would
+    // resolve every headline against Experience's baselines.
+    const tracer = createHeadlineTracer({ glyphSvg, connectorGroup, docBox, pointInSiteSpace });
 
-        if (next && glyph.lineIndex === next.lineIndex) {
-          const trans = findTrans(glyph.key, next.key, isMobile);
-          if (trans && trans.visibility === "visible" && trans.fromAnchor) {
-            pref = trans.fromAnchor;
-          }
-        }
-        if (!pref && prev && glyph.lineIndex === prev.lineIndex) {
-          const trans = findTrans(prev.key, glyph.key, isMobile);
-          if (trans && trans.visibility === "visible" && trans.toAnchor) {
-            pref = trans.toAnchor;
-          }
-        }
-        if (lastFractions?.[glyph.key] !== undefined && i === order.length - 1) {
-          pref = { mode: "fraction", fraction: lastFractions[glyph.key]! };
-        }
-        if (!pref) {
-          pref = { mode: "top" };
-        }
-
-        glyph.junctions = glyph.paths.map((path, contourIndex) =>
-          findJunction(path, glyph.left, glyph.baselineY, glyph.scale, contourIndex === 0 ? pref : undefined),
-        );
-      });
-
-      const segments: Segment[] = [];
-      order.forEach((glyph, glyphIndex) => {
-        glyph.paths.forEach((path, contourIndex) => {
-          if (contourIndex > 0) segments.push({ drawLength: 0, weight: Math.max(18, groupFontSize * 0.18), startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 });
-          const length = path.getTotalLength();
-          segments.push({ element: path, drawLength: length, weight: length * glyph.scale, startDistance: glyph.junctions[contourIndex]!.distance, kind: "closed", layer: "glyph", startScroll: 0, endScroll: 1 });
-          if (contourIndex > 0) segments.push({ drawLength: 0, weight: Math.max(18, groupFontSize * 0.18), startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 });
-        });
-        const next = order[glyphIndex + 1];
-        if (next) {
-          const sameLine = glyph.lineIndex === next.lineIndex;
-          const trans = sameLine ? findTrans(glyph.key, next.key, isMobile) : undefined;
-          segments.push(createConnector(glyph, next, glyph.junctions[0]!, next.junctions[0]!, sameLine, groupFontSize, trans));
-        }
-      });
-      return { order, segments };
-    };
-
-    const fontSize = Number.parseFloat(getComputedStyle(document.querySelector<HTMLElement>(".about__glyph")!).fontSize);
-    const aboutGroup = buildGlyphGroup(
-      collectGlyphs(".about__glyph[data-glyph-key]", "data-glyph-key", "glyphKey", "glyphContour", "data-glyph-baseline", 0),
-      fontSize,
-      findTransition,
-      true,
-      ABOUT_EXIT_JUNCTION_FRACTIONS,
+    const aboutGroup = tracer.collectAndBuild(
+      {
+        id: "about",
+        headingEl: document.querySelector<HTMLElement>("#about-title"),
+        spanClass: ".about__glyph",
+        keyDataset: "glyphKey",
+        keyAttr: "data-glyph-key",
+        contourDataset: "glyphContour",
+        baselineAttr: "data-glyph-baseline",
+        wordPart: 0,
+        findTransition,
+        snake: true,
+        exitJunctionFractions: ABOUT_EXIT_JUNCTION_FRACTIONS,
+      },
+      isMobile,
     );
     const glyphOrder = aboutGroup.order;
     const headlineSegments = aboutGroup.segments;
     if (!glyphOrder.length) return;
-    // Round 12: the Experience headline trace (same mechanism, reading
-    // order on both lines, no snake reversal). Absent (e.g. a heading
-    // without the trace prop) the page simply has no exp segments.
-    const expGlyphEl = document.querySelector<HTMLElement>(".exp__glyph");
-    const expFontSize = expGlyphEl ? Number.parseFloat(getComputedStyle(expGlyphEl).fontSize) : fontSize;
-    const expGroup = expGlyphEl
-      ? buildGlyphGroup(
-        collectGlyphs(".exp__glyph[data-exp-glyph-key]", "data-exp-glyph-key", "expGlyphKey", "expGlyphContour", "data-exp-glyph-baseline", 1),
-        expFontSize,
-        findExpTransition,
-        false,
-      )
-      : { order: [] as GlyphRecord[], segments: [] as Segment[] };
-    const expOrder = expGroup.order;
+    const first = aboutGroup.first!;
+    const last = aboutGroup.last!;
 
-    const first = glyphOrder[0]!.junctions[0]!, last = glyphOrder.at(-1)!.junctions[0]!;
+    // Round 12.1: the About headline window is computed here, right
+    // after the About group, because the Experience trace window starts
+    // from s2 and the trace must be built before the site-1 path that
+    // leaves its exit. (Unchanged formulas: the glyph window ends when
+    // the last glyph sits at 34% viewport height.)
+    s0 = Math.round(heroHeight * 0.55);
+    sHandoffEnd = s0 + (isMobile ? 35 : 50);
+    sGlyphStart = Math.max(sHandoffEnd + (isMobile ? 65 : 85), Math.round(first.y - winHeight * 0.72));
+    const s1 = sGlyphStart;
+    s2 = Math.max(s1 + Math.max(480, winHeight * 0.62), Math.round(last.y - winHeight * 0.34));
+
+    // Round 12.1 (Bug 1): the Experience trace window comes from the
+    // shared headlineTraceWindow: it ends when the last line's bottom
+    // reaches 72% viewport height, so the trace completes while the
+    // headline is still framed, instead of at 34% (by which time the
+    // headline top had scrolled 230-280px above the viewport). Same
+    // mechanism as Round 12, reading order on both lines, no snake
+    // reversal. Absent (a heading without the trace prop) there are no
+    // exp segments and site-1 keeps its old end.
+    const expTrace = tracer.traceHeadline(
+      {
+        id: "exp",
+        headingEl: document.querySelector<HTMLElement>("#experience-title"),
+        spanClass: ".heading__glyph",
+        keyDataset: "headingGlyphKey",
+        keyAttr: "data-exp-glyph-key",
+        contourDataset: "expGlyphContour",
+        baselineAttr: "data-heading-glyph-baseline",
+        wordPart: 1,
+        findTransition: findExpTransition,
+      },
+      { anchor: { x: edge, y: expTop, distance: 0 }, prevEnd: s2, headingTop: expTop, winHeight },
+      isMobile,
+    );
+    let s3 = expTrace.window[0];
+    let sExp = expTrace.window[1];
+    if (!expTrace.segments.length) {
+      s3 = Math.max(s2 + 160, Math.round(expTop - winHeight * 0.55));
+      sExp = s3;
+    }
+    const expSegments = expTrace.segments;
+
     const stmt = document.querySelector(".about__statement"), prof = document.querySelector(".about__profile");
     const gapTop = stmt ? botOf(".about__statement") : aboutTop + 400, gapBot = prof ? topOf(".about__profile") : aboutTop + 650;
     const rightEdge = width - edge;
@@ -1041,58 +877,66 @@ export function initSiteThread() {
       };
     });
 
-    s0 = Math.round(heroHeight * 0.55);
-    sHandoffEnd = s0 + (isMobile ? 35 : 50);
-    sGlyphStart = Math.max(sHandoffEnd + (isMobile ? 65 : 85), Math.round(first.y - winHeight * 0.72));
-    const s1 = sGlyphStart;
-
+    // Round 12.1: s0/sHandoffEnd/sGlyphStart/s1/s2 and the Experience
+    // window [s3, sExp] were computed up front (right after the About
+    // group), because the Experience trace needs s2. This section only
+    // times the segments.
     setTiming(siteSegments[0]!, s0, sHandoffEnd);
     setTiming(siteSegments[6]!, sHandoffEnd, sGlyphStart);
-
-    s2 = Math.max(s1 + Math.max(480, winHeight * 0.62), Math.round(last.y - winHeight * 0.34));
-    const s3 = Math.max(s2 + 160, Math.round(expTop - winHeight * 0.55));
-    // Round 12: the Experience headline trace runs between site-1 (which
-    // ends at the Experience top) and site-2 (left gutter to Projects).
-    // Entry/exit are hidden weighted travel: in from the site-1 end
-    // (left edge, expTop) to the first exp junction, out from the last
-    // exp junction back to the site-2 start, so the dot never teleports
-    // visibly between the headline and the gutter run.
-    const expFirst = expOrder[0]?.junctions[0];
-    const expLast = expOrder.at(-1)?.junctions[0];
-    let expSegments: Segment[] = [];
-    let sExp = s3;
-    if (expFirst && expLast && expOrder.length) {
-      const distTo = (a: Junction, b: Junction) => Math.hypot(b.x - a.x, b.y - a.y);
-      const site1End: Junction = { x: edge, y: expTop, distance: 0 };
-      const entryWeight = Math.max(fontSize * 0.22, distTo(site1End, expFirst) * 0.18);
-      const exitWeight = Math.max(fontSize * 0.22, distTo(expLast, site1End) * 0.18);
-      expSegments = [
-        { drawLength: 0, weight: entryWeight, startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 },
-        ...expGroup.segments,
-        { drawLength: 0, weight: exitWeight, startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 },
-      ];
-      sExp = Math.max(s3 + Math.max(480, winHeight * 0.62), Math.round(expLast.y - winHeight * 0.34));
-      const expWeight = expSegments.reduce((sum, segment) => sum + segment.weight, 0);
-      let expCursor = s3;
-      expSegments.forEach((segment) => { const end = expCursor + (sExp - s3) * segment.weight / expWeight; setTiming(segment, expCursor, end); expCursor = end; });
-    }
-    const s4 = Math.max(sExp + 60, Math.round(projTop - winHeight * 0.55)), s5 = Math.max(s4 + 60, Math.round(skillsTop - winHeight * 0.55)), s6 = Math.max(s5 + 60, Math.round(contactTop - winHeight * 0.55)), s7 = Math.max(s6 + 60, height - winHeight);
     const headlineWeight = headlineSegments.reduce((sum, segment) => sum + segment.weight, 0); let cursor = s1;
     headlineSegments.forEach((segment) => { const end = cursor + (s2 - s1) * segment.weight / headlineWeight; setTiming(segment, cursor, end); cursor = end; });
     setTiming(siteSegments[1]!, s2, s3);
+
+    // Round 12.1 (Bugs 5-7): the Projects headline trace runs between
+    // site-2 (which ends at the Projects top) and C0. s4 is its start
+    // lower bound (it equals sProjStart by construction); the end is
+    // capped 60px before the E2EE article window opens so C0 keeps a
+    // real scroll span and the chain start never overtakes it.
+    const s4 = Math.max(sExp + 60, Math.round(projTop - winHeight * 0.55));
+    const s5 = Math.max(s4 + 60, Math.round(skillsTop - winHeight * 0.55));
+    const projTrace = tracer.traceHeadline(
+      {
+        id: "proj",
+        headingEl: document.querySelector<HTMLElement>("#projects-title"),
+        spanClass: ".heading__glyph",
+        keyDataset: "headingGlyphKey",
+        keyAttr: "data-proj-glyph-key",
+        contourDataset: "projGlyphContour",
+        baselineAttr: "data-heading-glyph-baseline",
+        wordPart: 0,
+      },
+      { anchor: { x: edge, y: projTop, distance: 0 }, prevEnd: sExp, headingTop: projTop, winHeight, endCap: chain ? chain.stages[0]!.artStart - 60 : undefined },
+      isMobile,
+    );
+    const projSegments = projTrace.segments;
+    const sProjStart = projTrace.window[0];
+    const sProjEnd = projTrace.window[1];
     // Round 12: the project chain tiles [chainStart, chainEnd] gaplessly.
     // C0 runs the gutter while the Projects header scrolls by, each
     // stage's paths tile its article's trigger window (so the thread and
     // the DOM choreography share one progress value), the inter-stage
     // connectors tile the gaps between articles, and C3 lands on
     // skillsTop where site-4 takes over.
+    // Round 12.1 (Bug 2): the article trigger windows overlap (the
+    // 128px inter-article gap is smaller than 0.35*winH), so the
+    // connector windows [prev.artEnd, next.artStart] inverted and the
+    // connectors popped 0 to 1 in 1px of scroll. Each stage's artEnd is
+    // clamped to at most the next stage's artStart minus a minimum
+    // connector draw span, so every connector gets a real scroll span.
+    // The stage thread completes earlier than its DOM choreography (the
+    // stages still START in sync, which is what entry continuity needs).
+    const MIN_CONNECTOR_SPAN = 200;
     let chainSegments: Segment[] = [];
+    let chainEnd = sProjEnd;
     if (chain) {
-      const chainStart = Math.max(sExp + 1, Math.min(s4, chain.stages[0]!.artStart - 1));
-      const chainEnd = Math.max(s5, chain.stages[2]!.artEnd + 1);
-      const s6c = Math.max(s6, chainEnd + 60);
-      const s7c = Math.max(s7, s6c + 60);
-      setTiming(siteSegments[2]!, sExp, chainStart);
+      if (chain.stages[0] && chain.stages[1]) {
+        chain.stages[0].artEnd = Math.max(chain.stages[0].artStart + 1, Math.min(chain.stages[0].artEnd, chain.stages[1].artStart - MIN_CONNECTOR_SPAN));
+      }
+      if (chain.stages[1] && chain.stages[2]) {
+        chain.stages[1].artEnd = Math.max(chain.stages[1].artStart + 1, Math.min(chain.stages[1].artEnd, chain.stages[2].artStart - MIN_CONNECTOR_SPAN));
+      }
+      const chainStart = Math.max(sProjEnd, Math.min(s4, chain.stages[0]!.artStart - 1));
+      setTiming(siteSegments[2]!, sExp, sProjStart);
       setTiming(siteSegments[3]!, chainStart, chain.stages[0]!.artStart);
       const mkStageSegs = (stage: BuiltStage): Segment[] =>
         stage.paths.map((element, i) => {
@@ -1132,18 +976,69 @@ export function initSiteThread() {
       const pianoSegs = mkStageSegs(chain.stages[2]!);
       const c1Seg = mkConnectorSeg(connectorEls[0]!, chain.stages[0]!.artEnd, chain.stages[1]!.artStart);
       const c2Seg = mkConnectorSeg(connectorEls[1]!, chain.stages[1]!.artEnd, chain.stages[2]!.artStart);
-      const c3Seg = mkConnectorSeg(connectorEls[2]!, chain.stages[2]!.artEnd, chainEnd);
+      // Round 12.1 (Bug 4): C3 starts when the Piano belt visually
+      // completes (its last path ends at dotEnd 0.85 of the art window),
+      // not at artEnd - between belt completion and artEnd the user saw
+      // a finished belt, an exit dot and an empty gap. The chain end is
+      // pushed out so C3 keeps at least MIN_CONNECTOR_SPAN of scroll.
+      const pianoLastEnd = pianoSegs.at(-1)!.endScroll;
+      chainEnd = Math.max(s5, chain.stages[2]!.artEnd + 1, pianoLastEnd + MIN_CONNECTOR_SPAN);
+      const c3Seg = mkConnectorSeg(connectorEls[2]!, pianoLastEnd, chainEnd);
       chainSegments = [siteSegments[3]!, ...e2eeSegs, c1Seg, ...sheetSegs, c2Seg, ...pianoSegs, c3Seg];
       stageDots = chain.stages.map((stage) => ({ dot: stage.dot, artStart: stage.artStart, artEnd: stage.artEnd, dotEnd: stage.plan.dotEnd }));
-      setTiming(siteSegments[4]!, chainEnd, s6c);
-      setTiming(siteSegments[5]!, s6c, s7c);
     } else {
-      setTiming(siteSegments[2]!, sExp, s4); setTiming(siteSegments[3]!, s4, s5); setTiming(siteSegments[4]!, s5, s6); setTiming(siteSegments[5]!, s6, s7);
+      setTiming(siteSegments[2]!, sExp, sProjStart);
       stageDots = [];
     }
+
+    // Round 12.1 (Bugs 5-7): the Skills headline trace runs between the
+    // project chain (or the Projects trace, in the fallback) and site-4;
+    // the Contact trace runs between site-4 and site-5, and the thread
+    // ends gracefully at the footer: site-5 runs from the end of the
+    // Contact trace to the email link, where the head dot parks.
+    const skillsTrace = tracer.traceHeadline(
+      {
+        id: "skills",
+        headingEl: document.querySelector<HTMLElement>("#skills-title"),
+        spanClass: ".heading__glyph",
+        keyDataset: "headingGlyphKey",
+        keyAttr: "data-skills-glyph-key",
+        contourDataset: "skillsGlyphContour",
+        baselineAttr: "data-heading-glyph-baseline",
+        wordPart: 0,
+      },
+      { anchor: { x: edge, y: skillsTop, distance: 0 }, prevEnd: chain ? chainEnd : sProjEnd, headingTop: skillsTop, winHeight },
+      isMobile,
+    );
+    const skillsSegments = skillsTrace.segments;
+    const sSkillsStart = skillsTrace.window[0];
+    const sSkillsEnd = skillsTrace.window[1];
+    const contactTrace = tracer.traceHeadline(
+      {
+        id: "contact",
+        headingEl: document.querySelector<HTMLElement>("#contact-title"),
+        spanClass: ".heading__glyph",
+        keyDataset: "headingGlyphKey",
+        keyAttr: "data-contact-glyph-key",
+        contourDataset: "contactGlyphContour",
+        baselineAttr: "data-heading-glyph-baseline",
+        wordPart: 0,
+      },
+      { anchor: { x: edge, y: contactTop, distance: 0 }, prevEnd: sSkillsEnd, headingTop: contactTop, winHeight },
+      isMobile,
+    );
+    const contactSegments = contactTrace.segments;
+    const sContactStart = contactTrace.window[0];
+    const sContactEnd = contactTrace.window[1];
+    const s7 = Math.max(sContactEnd + 60, height - winHeight);
+    if (!chain) {
+      setTiming(siteSegments[3]!, sProjEnd, sSkillsStart);
+    }
+    setTiming(siteSegments[4]!, sSkillsEnd, sContactStart);
+    setTiming(siteSegments[5]!, sContactEnd, s7);
     segments = chain
-      ? [siteSegments[0]!, siteSegments[6]!, ...headlineSegments, siteSegments[1]!, ...expSegments, siteSegments[2]!, ...chainSegments, siteSegments[4]!, siteSegments[5]!]
-      : [siteSegments[0]!, siteSegments[6]!, ...headlineSegments, siteSegments[1]!, ...expSegments, ...siteSegments.slice(2)];
+      ? [siteSegments[0]!, siteSegments[6]!, ...headlineSegments, siteSegments[1]!, ...expSegments, siteSegments[2]!, ...projSegments, ...chainSegments, ...skillsSegments, siteSegments[4]!, ...contactSegments, siteSegments[5]!]
+      : [siteSegments[0]!, siteSegments[6]!, ...headlineSegments, siteSegments[1]!, ...expSegments, siteSegments[2]!, ...projSegments, siteSegments[3]!, ...skillsSegments, siteSegments[4]!, ...contactSegments, siteSegments[5]!];
     render(scrollY);
   };
 

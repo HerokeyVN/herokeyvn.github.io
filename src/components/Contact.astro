@@ -1,5 +1,6 @@
 ---
 import { profile } from "../data/portfolio";
+import { CONTACT_TRACE_WORDS } from "../data/about-glyphs";
 ---
 
 <footer class="contact section" id="contact" aria-labelledby="contact-title">
@@ -19,7 +20,19 @@ import { profile } from "../data/portfolio";
 
       <h2 id="contact-title" class="contact__heading" data-reveal>
         Let's build the backend<br />
-        <em>your product needs.</em>
+        <em>
+          {CONTACT_TRACE_WORDS.map((word, wordIndex) => (
+            <>
+              <span class="heading__trace-word" data-heading-glyph-word={wordIndex}>
+                {[...word].map((char, charIndex) => (
+                  <span class="heading__glyph" data-heading-glyph-key={`contact-${wordIndex}-${charIndex}`} data-heading-glyph-char={char}>{char}</span>
+                ))}
+                <span class="heading__glyph-baseline" data-heading-glyph-baseline={wordIndex} aria-hidden="true"></span>
+              </span>
+              {wordIndex < CONTACT_TRACE_WORDS.length - 1 && " "}
+            </>
+          ))}
+        </em>
       </h2>
 
       <div class="contact__portal" data-reveal>
@@ -125,6 +138,12 @@ import { profile } from "../data/portfolio";
     color: transparent;
     -webkit-text-stroke: 1px rgba(239, 237, 230, 0.55);
   }
+
+  /* Round 12.1: same per-char trace spans as SectionHeading (the Contact
+     heading is not a SectionHeading, so the rules live here too). */
+  .heading__trace-word { white-space: nowrap; }
+  .heading__glyph { display: inline; }
+  .heading__glyph-baseline { display: inline-block; width: 0; height: 0; overflow: hidden; line-height: 0; vertical-align: baseline; }
 
   .contact__portal {
     margin-top: 1rem;
