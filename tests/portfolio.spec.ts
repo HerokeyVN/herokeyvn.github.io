@@ -144,15 +144,57 @@ test("keeps the site thread outside protected content", async ({ page }) => {
       // filled headline span, inside its 6 px margin, so samples within
       // 24 px of the endpoint are excluded: the connector may only touch
       // protected content at its designed junction, never along its run.
-      const end = segment === 6 ? path.getPointAtLength(length) : null;
+      // Round 12: segment 3 is the C0 connector, whose endpoint meets
+      // the E2EE stage entry on the exhibit/visual edge by design, so
+      // samples within 12 px of it are excluded the same way.
+      const end = segment === 6 || segment === 3 ? path.getPointAtLength(length) : null;
+      const endSkip = segment === 6 ? 24 : segment === 3 ? 12 : 0;
       for (let distance = 0; distance <= length; distance += 4) {
         const point = path.getPointAtLength(distance);
-        if (end && Math.hypot(point.x - end.x, point.y - end.y) < 24) continue;
+        if (end && Math.hypot(point.x - end.x, point.y - end.y) < endSkip) continue;
         if (boxes.some((box) => point.x > box.left && point.x < box.right && point.y > box.top && point.y < box.bottom)) {
           hits.push({ segment, distance });
         }
       }
     }
+    // Round 12: the project connectors (C1-C3) are site-space paths too
+    // and run in the gutters and the inter-article gaps, so they are
+    // sampled here as well. Two differences from the site segments: the
+    // coarse .project-exhibit box is not protection for them (the
+    // connectors legitimately travel inside it, down the inter-column
+    // gaps and up to the stage edges), so only the real content elements
+    // are protected; and samples within 12 px of either endpoint are
+    // skipped (the endpoints meet the stage edges by design, so the runs
+    // themselves are what this checks).
+    const connBoxes = [...document.querySelectorAll<HTMLElement>(
+      "p, a, button, nav, .initiative-card, .skill-row, .education, h1, h2, h3, .project-name, .project-description, .tech-tag, .project-exhibit__visual, .about__kicker",
+    )]
+      .filter((element): element is HTMLElement => Boolean(element))
+      .filter((element) => !element.closest("#top") && !element.closest(".site-header"))
+      .filter((element) => !element.classList.contains("about__title"))
+      .map((element) => {
+        const box = element.getBoundingClientRect();
+        return {
+          left: box.left - 6,
+          right: box.right + 6,
+          top: box.top + scrollY - 6,
+          bottom: box.bottom + scrollY + 6,
+        };
+      });
+    const connectors = [...document.querySelectorAll<SVGPathElement>("[data-project-connector]")];
+    connectors.forEach((path, i) => {
+      const length = path.getTotalLength();
+      const start = path.getPointAtLength(0);
+      const end = path.getPointAtLength(length);
+      for (let distance = 0; distance <= length; distance += 4) {
+        const point = path.getPointAtLength(distance);
+        if (Math.hypot(point.x - start.x, point.y - start.y) < 12) continue;
+        if (Math.hypot(point.x - end.x, point.y - end.y) < 12) continue;
+        if (connBoxes.some((box) => point.x > box.left && point.x < box.right && point.y > box.top && point.y < box.bottom)) {
+          hits.push({ segment: 100 + i, distance });
+        }
+      }
+    });
     return hits;
   });
 
@@ -299,10 +341,15 @@ test("project visuals render their complete static composition without scrolling
     const sheet = document.querySelector('[data-project-slug="sky-sheet-store"]')!;
     const piano = document.querySelector('[data-project-slug="sky-auto-piano"]')!;
     const e2ee = document.querySelector('[data-project-slug="fb-messenger-e2ee"]')!;
-    // The E2EE seal coil is marked data-el="e2ee-seal" in the markup
-    // (desktop Lissajous ~600 viewBox units, mobile S-coil ~200); its
-    // length is in viewBox units, > 100 on both variants.
-    const coil = e2ee.querySelector<SVGPathElement>('[data-el="e2ee-seal"]');
+    // Round 12: the seal coil is gone (deleted with the round-11 knot).
+    // The through-path that replaced it runs straight through the sealed
+    // core under the HELLO message (desktop front path 3, the shallow G1
+    // dip, ~180 viewBox units; mobile front path 2, the jog around the
+    // sealed message, ~255). Its length is in viewBox units, > 100 on
+    // both variants.
+    const through = e2ee.querySelectorAll<SVGPathElement>(
+      `svg[data-variant="${variant}"][data-layer="thread-front"] .project-thread-path`,
+    )[isMobile ? 1 : 2]!;
     return {
       stages: out,
       key14Lit: sheet.querySelector('[data-key="14"]')!.classList.contains("is-lit"),
@@ -310,7 +357,7 @@ test("project visuals render their complete static composition without scrolling
       hPressed: piano.querySelector('[data-pkey="H"]')!.classList.contains("is-pressed"),
       lLit: piano.querySelector('[data-pkey="L"]')!.classList.contains("is-lit"),
       lHeld: piano.querySelector('[data-pkey="L"]')!.classList.contains("is-held"),
-      coilLength: coil ? coil.getTotalLength() : 0,
+      throughLength: through ? through.getTotalLength() : 0,
     };
   });
 
@@ -325,19 +372,23 @@ test("project visuals render their complete static composition without scrolling
   expect(state.hPressed).toBe(true);
   expect(state.lLit).toBe(true);
   expect(state.lHeld).toBe(true);
-  expect(state.coilLength as number).toBeGreaterThan(100);
+  expect(state.throughLength as number).toBeGreaterThan(100);
 });
 
 test("project visuals choreograph through scrub and reach their final state at full scrub", async ({ page }) => {
   // Phase 4: one scrubbed timeline per scene (trigger article, top 80% ->
   // bottom 45%, scrub 1). At mid scrub the thread is partly drawn and the
   // structural beats the belt has not reached yet are still in their start
-  // state (Piano H unpressed, Sheet key 14 unlit, E2EE seal coil undrawn).
-  // Scrolled 5% past the trigger end (round-9 lesson: the motion.ts stage
-  // entrance settles ~22px after the triggers first measure), p = 1: the
-  // approved static, every path fully drawn, keys lit/pressed/held, gauge
-  // at 88%. The mid-scrub assertions tolerate the ~0.02 progress shift
-  // that entrance causes; the windows they check are far from their edges.
+  // state (Piano H unpressed, Sheet key 14 unlit, E2EE through-path
+  // undrawn). Scrolled 5% past the trigger end (round-9 lesson: the
+  // motion.ts stage entrance settles ~22px after the triggers first
+  // measure), p = 1: the approved static, every path fully drawn, keys
+  // lit/pressed/held, gauge at 88%. The mid-scrub assertions tolerate the
+  // ~0.02 progress shift that entrance causes; the windows they check are
+  // far from their edges. Round 12: the thread through the stages is the
+  // one site thread now (site-thread.ts drives the stage dashes), so the
+  // fractions below read the same dash state the unified thread produces;
+  // the DOM choreography and its p-windows are unchanged.
   test.slow();
   await page.goto("/");
   await page.waitForLoadState("domcontentloaded");
@@ -445,16 +496,18 @@ test("project visuals choreograph through scrub and reach their final state at f
       return out;
     }, slug);
 
-  // E2EE mid (p 0.35): entry + frame crossings drawn, seal coil not
-  // started, frames and core message still settling in.
+  // E2EE mid (p 0.35): entry + frame crossings drawn, through-path not
+  // started (it draws in the old seal-coil window, [0.44, 0.8] desktop /
+  // [0.42, 0.68] mobile, while the core assembles), frames and core
+  // message still settling in.
   await scrollToProgress("fb-messenger-e2ee", 0.35);
   const e2eeMid = await readScene("fb-messenger-e2ee");
   expect(e2eeMid.progress as number).toBeGreaterThanOrEqual(0.3);
   expect(e2eeMid.progress as number).toBeLessThan(0.5);
   expect(e2eeMid.drawn as number).toBeGreaterThan(0);
   expect(e2eeMid.drawn as number).toBeLessThan(1);
-  const e2eeCoil = (e2eeMid.front as number[])[(e2eeMid.isMobile as boolean) ? 1 : 2]!;
-  expect(e2eeCoil).toBe(0);
+  const e2eeThrough = (e2eeMid.front as number[])[(e2eeMid.isMobile as boolean) ? 1 : 2]!;
+  expect(e2eeThrough).toBe(0);
   for (const opacity of e2eeMid.frames as number[]) expect(opacity).toBeLessThan(1);
   expect(e2eeMid.coreMessage as number).toBeLessThan(1);
 
@@ -743,7 +796,15 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
       return Math.min(...samples.map((s) => Math.hypot(point.x - s.x, point.y - s.y)));
     };
 
-    const connectors = [...document.querySelectorAll<SVGPathElement>("[data-glyph-connector]")];
+    // Round 12: the connector budget (2-4) is per traced composition.
+    // The Experience headline adds its own 3 connectors, so the About
+    // connectors are counted separately from the exp ones.
+    const connectors = [...document.querySelectorAll<SVGPathElement>("[data-glyph-connector]")].filter(
+      (c) => !c.getAttribute("data-from-glyph")!.startsWith("exp-"),
+    );
+    const expConnectorCount = document.querySelectorAll<SVGPathElement>(
+      "[data-glyph-connector][data-from-glyph^='exp-']",
+    ).length;
     const sitePaths = [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")];
 
     const connectorDetails = connectors.map((connector) => {
@@ -821,6 +882,7 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
       lineCount: lines.length,
       contourCount: document.querySelectorAll("[data-glyph-contour]").length,
       connectorCount: connectors.length,
+      expConnectorCount,
       zeroLengthPaths: [...outerContours, ...connectors, ...sitePaths].filter((path) => path.getTotalLength() <= 0).length,
       connectorDetails,
       glyphExitJunctionError,
@@ -832,6 +894,8 @@ test("builds a continuous thread system around every outlined glyph", async ({ p
   expect(continuity.zeroLengthPaths).toBe(0);
   expect(continuity.connectorCount).toBeGreaterThanOrEqual(2);
   expect(continuity.connectorCount).toBeLessThanOrEqual(4);
+  expect(continuity.expConnectorCount).toBeGreaterThanOrEqual(2);
+  expect(continuity.expConnectorCount).toBeLessThanOrEqual(4);
   expect(continuity.glyphExitJunctionError).toBeLessThan(0.75);
 
   for (const detail of continuity.connectorDetails) {
@@ -2100,12 +2164,22 @@ test("round 11: thread geometry is G1-continuous with controlled curvature", asy
   // boundaries) is tangent-continuous, every cubic keeps a minimum radius
   // of curvature, glyph connectors leave/arrive along the contour
   // tangents, the contact approach stays on-canvas, and the site-1 exit
-  // stays clear of the About statement and profile. Thresholds sit below
-  // the measured values with margin (worst measured joint mismatch 0.6deg,
-  // worst cubic radius 5px on the tiny mobile connector rise); they do not
-  // chase the measurements.
+  // stays clear of the About statement and profile text. Thresholds sit
+  // below the measured values with margin (worst measured joint mismatch
+  // 0.6deg, worst cubic radius 5px on the tiny mobile connector rise);
+  // they do not chase the measurements. Round 12: clearances are measured
+  // against the TEXT elements, not the section boxes, because the new
+  // site-1 drop deliberately runs through the statement box's empty
+  // channel; the guard is that it never touches actual text. Round 12
+  // integration: the old 1->2->3->4->5 cross-segment loop is replaced by
+  // the project chain (site-2 -> C0 -> stage paths -> C1/C2/C3 -> site-4
+  // -> site-5, compared in site space via CTM sampling), the stage paths
+  // get their own joint/radius checks in travel order (viewBox space),
+  // and the Sheet connector -> melody joint is re-measured as the actual
+  // angle between the two tangents, not the absolute end angle.
   const viewports = [
     { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
     { width: 390, height: 844 },
   ];
 
@@ -2119,6 +2193,16 @@ test("round 11: thread geometry is G1-continuous with controlled curvature", asy
         0,
       ) > 1000,
     );
+    // Clearances are measured in the REVEALED state: reveal tweens shift
+    // the statement (+22px) and the Experience heading (+34px) on mobile
+    // until they play, and the thread is built in final layout
+    // coordinates, so measuring at scrollY 0 would overstate mobile
+    // clearances by the offset.
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = "auto";
+      document.querySelector(".about__statement")!.scrollIntoView({ block: "center" });
+    });
+    await page.waitForTimeout(2500);
 
     const geom = await page.evaluate(() => {
       type Pt = { x: number; y: number };
@@ -2214,20 +2298,14 @@ test("round 11: thread geometry is G1-continuous with controlled curvature", asy
         minRadius.push(segMin);
       });
 
-      // Cross-segment joints: site i end vs site i+1 start (1->2->3->4->5).
-      for (let i = 1; i <= 4; i++) {
-        const a = siteCmds[i]![siteCmds[i]!.length - 1]!;
-        const b = siteCmds[i + 1]!.find((c) => c.cmd !== "M")!;
-        maxJointMismatch.value = Math.max(maxJointMismatch.value, angleBetween(endTangent(a), startTangent(b)));
-      }
-
-      // Hero exit -> handoff start. getTotalLength() returns real user
-      // units (pathLength="1" does not rescale it), so the end tangent is
-      // sampled over the last 4 absolute px, with no wrap (open path).
+      // Round 12: the project chain. Travel order through Projects is
+      // site-2 -> C0 -> E2EE stage paths -> C1 -> Sheet paths -> C2 ->
+      // Piano paths -> C3 -> site-4 -> site-5. Consecutive elements are
+      // compared in site space via CTM sampling, so paths from different
+      // SVGs (site space vs stage viewBoxes) are compared in one frame.
+      // The old 1->2->3->4->5 loop is subsumed: site-3 is now the C0
+      // connector and the stage paths sit between site-3 and site-4.
       const isMobile = window.innerWidth <= 700;
-      const heroExit = document.querySelector<SVGPathElement>(
-        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
-      )!;
       const siteSvg = sitePaths[0]!.ownerSVGElement!;
       const toSiteSpace = (el: SVGPathElement, distance: number): Pt | null => {
         const pt = el.getPointAtLength(distance);
@@ -2237,6 +2315,113 @@ test("round 11: thread geometry is G1-continuous with controlled curvature", asy
         const q = new DOMPoint(pt.x, pt.y).matrixTransform(pathMatrix).matrixTransform(siteMatrix.inverse());
         return { x: q.x, y: q.y };
       };
+      const endTanSite = (el: SVGPathElement): Pt | null => {
+        const len = el.getTotalLength();
+        if (len <= 0) return null;
+        const eps = Math.min(4, len / 4);
+        const a = toSiteSpace(el, len - eps);
+        const b = toSiteSpace(el, len);
+        return a && b ? norm(sub(b, a)) : null;
+      };
+      const startTanSite = (el: SVGPathElement): Pt | null => {
+        const len = el.getTotalLength();
+        if (len <= 0) return null;
+        const eps = Math.min(4, len / 4);
+        const a = toSiteSpace(el, 0);
+        const b = toSiteSpace(el, eps);
+        return a && b ? norm(sub(b, a)) : null;
+      };
+      const chainMismatch = { value: 0 };
+      const chainPair = (a: SVGPathElement, b: SVGPathElement) => {
+        const ta = endTanSite(a), tb = startTanSite(b);
+        if (ta && tb) chainMismatch.value = Math.max(chainMismatch.value, angleBetween(ta, tb));
+      };
+      const stagePathsInOrder = (slug: string, order: [string, number][]): SVGPathElement[] => {
+        const stage = document.querySelector<HTMLElement>(`[data-project-slug="${slug}"]`)!;
+        const byLayer = (layer: string) => [...stage.querySelectorAll<SVGPathElement>(`svg[data-variant="${isMobile ? "mobile" : "desktop"}"][data-layer="thread-${layer}"] .project-thread-path`)];
+        const fronts = byLayer("front"), backs = byLayer("back");
+        return order.map(([layer, i]) => (layer === "front" ? fronts[i] : backs[i])!).filter(Boolean);
+      };
+      const e2eePaths = stagePathsInOrder("fb-messenger-e2ee", isMobile
+        ? [["front", 0], ["back", 0], ["front", 1], ["front", 2]]
+        : [["front", 0], ["back", 0], ["front", 1], ["back", 1], ["front", 2]]);
+      const sheetPaths = stagePathsInOrder("sky-sheet-store", [["front", 0], ["back", 0], ["front", 1], ["front", 2], ["front", 3]]);
+      const pianoPaths = stagePathsInOrder("sky-auto-piano", [["front", 0], ["back", 0], ["front", 1]]);
+      const connectorPaths = [...document.querySelectorAll<SVGPathElement>("[data-project-connector]")];
+      const chainEls = [sitePaths[2]!, sitePaths[3]!, ...e2eePaths, connectorPaths[0]!, ...sheetPaths, connectorPaths[1]!, ...pianoPaths, connectorPaths[2]!, sitePaths[4]!, sitePaths[5]!]
+        .filter((el): el is SVGPathElement => Boolean(el));
+      const sheetDescent = sheetPaths[sheetPaths.length - 2]!;
+      const sheetExit = sheetPaths[sheetPaths.length - 1]!;
+      for (let i = 0; i < chainEls.length - 1; i++) {
+        const a = chainEls[i]!, b = chainEls[i + 1]!;
+        // Documented exception (round 11): the Sheet descent ends
+        // heading straight down into key 14 and the exit leaves
+        // horizontally — a deliberate 90deg touch-point turn, not a kink.
+        if (a === sheetDescent && b === sheetExit) continue;
+        chainPair(a, b);
+      }
+      // Site-1 end vs site-2 start meet at (edge, expTop) with the exp
+      // headline trace travelling between them (hidden); the geometric
+      // joint still holds.
+      chainPair(sitePaths[1]!, sitePaths[2]!);
+
+      // Stage paths: internal joints and per-cubic min radius, measured
+      // in viewBox units (every path of one scene shares its viewBox, so
+      // consecutive paths are directly comparable there). The Sheet
+      // connector -> melody joint is reported separately: B's -4.6deg /
+      // -3.7deg are the ABSOLUTE end tangents, not the mismatch — the
+      // melody departs at the same angle, so the joint itself is ~0deg.
+      let maxStageJointMismatch = 0;
+      let minStageRadius: number | null = null;
+      let sheetConnectorMelody = 0;
+      const checkStagePaths = (paths: SVGPathElement[], slug: string) => {
+        const cmdsList = paths.map((p) => parseD(p.getAttribute("d") || ""));
+        cmdsList.forEach((cmds) => {
+          for (let i = 1; i < cmds.length; i++) {
+            const prev = cmds[i - 1]!, cur = cmds[i]!;
+            if (prev.cmd === "M") continue;
+            maxStageJointMismatch = Math.max(maxStageJointMismatch, angleBetween(endTangent(prev), startTangent(cur)));
+          }
+          cmds.filter((c) => c.cmd === "C").forEach((c) => {
+            const k = maxCurvature(c);
+            if (k > 0) minStageRadius = minStageRadius === null ? 1 / k : Math.min(minStageRadius, 1 / k);
+          });
+        });
+        for (let i = 0; i < paths.length - 1; i++) {
+          const a = cmdsList[i]!, b = cmdsList[i + 1]!;
+          // The 90deg touch-point turn, same exception as above.
+          if (slug === "sky-sheet-store" && i === paths.length - 2) continue;
+          const mismatch = angleBetween(endTangent(a[a.length - 1]!), startTangent(b.find((c) => c.cmd !== "M")!));
+          maxStageJointMismatch = Math.max(maxStageJointMismatch, mismatch);
+          if (slug === "sky-sheet-store" && i === 1) sheetConnectorMelody = mismatch;
+        }
+      };
+      checkStagePaths(e2eePaths, "fb-messenger-e2ee");
+      checkStagePaths(sheetPaths, "sky-sheet-store");
+      checkStagePaths(pianoPaths, "sky-auto-piano");
+
+      // Project connectors (C1-C3): internal joints + per-cubic min
+      // radius, in site space.
+      let minConnectorRadius: number | null = null;
+      connectorPaths.forEach((p) => {
+        const cmds = parseD(p.getAttribute("d") || "");
+        for (let i = 1; i < cmds.length; i++) {
+          const prev = cmds[i - 1]!, cur = cmds[i]!;
+          if (prev.cmd === "M") continue;
+          maxJointMismatch.value = Math.max(maxJointMismatch.value, angleBetween(endTangent(prev), startTangent(cur)));
+        }
+        cmds.filter((c) => c.cmd === "C").forEach((c) => {
+          const k = maxCurvature(c);
+          if (k > 0) minConnectorRadius = minConnectorRadius === null ? 1 / k : Math.min(minConnectorRadius, 1 / k);
+        });
+      });
+
+      // Hero exit -> handoff start. getTotalLength() returns real user
+      // units (pathLength="1" does not rescale it), so the end tangent is
+      // sampled over the last 4 absolute px, with no wrap (open path).
+      const heroExit = document.querySelector<SVGPathElement>(
+        isMobile ? "[data-thread-segment-mobile='2']" : "[data-thread-segment='2']",
+      )!;
       const heroLen = heroExit.getTotalLength();
       const heroA = toSiteSpace(heroExit, heroLen - 4)!;
       const heroB = toSiteSpace(heroExit, heroLen)!;
@@ -2267,7 +2452,7 @@ test("round 11: thread geometry is G1-continuous with controlled curvature", asy
         const connLast = connCmds[connCmds.length - 1]!;
         const contourTangentAt = (key: string, pt: Pt, forward: boolean): Pt => {
           const contour = document.querySelector<SVGPathElement>(
-            `path[data-glyph-key='${key}'][data-glyph-contour='0']`,
+            `path[data-glyph-key='${key}'][data-glyph-contour='0'], path[data-exp-glyph-key='${key}'][data-exp-glyph-contour='0']`,
           )!;
           const len = contour.getTotalLength();
           // Closest sample to the junction point, in site space.
@@ -2307,13 +2492,17 @@ test("round 11: thread geometry is G1-continuous with controlled curvature", asy
         }
       }
 
-      // Site-1 exit must stay clear of the About statement and profile.
+      // Site-1 exit must stay clear of the About statement and profile
+      // TEXT (the drop runs through the statement box's empty channel, so
+      // the box itself is not the guard; the node is display:none on
+      // mobile and is skipped there).
       const distToBox = (p: Pt, b: { left: number; right: number; top: number; bottom: number }) => {
         const dx = Math.max(b.left - p.x, 0, p.x - b.right);
         const dy = Math.max(b.top - p.y, 0, p.y - b.bottom);
         return Math.hypot(dx, dy);
       };
-      const minDistPathToBox = (path: SVGPathElement, box: { left: number; right: number; top: number; bottom: number }) => {
+      const minDistPathToBox = (path: SVGPathElement, box: { left: number; right: number; top: number; bottom: number } | null) => {
+        if (!box) return null;
         const len = path.getTotalLength();
         let min = Number.POSITIVE_INFINITY;
         for (let s = 0; s <= len; s += 2) {
@@ -2324,11 +2513,15 @@ test("round 11: thread geometry is G1-continuous with controlled curvature", asy
       const rectOf = (sel: string) => {
         const el = document.querySelector(sel)!;
         const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return null;
         return { left: r.left, right: r.right, top: r.top + scrollY, bottom: r.bottom + scrollY };
       };
       const site1Clearance = {
-        statement: minDistPathToBox(sitePaths[1]!, rectOf(".about__statement")),
-        profile: minDistPathToBox(sitePaths[1]!, rectOf(".about__profile")),
+        stmtP1: minDistPathToBox(sitePaths[1]!, rectOf(".about__statement > p:first-child")),
+        note: minDistPathToBox(sitePaths[1]!, rectOf(".about__note")),
+        node: minDistPathToBox(sitePaths[1]!, rectOf(".about__node")),
+        lead: minDistPathToBox(sitePaths[1]!, rectOf(".about__lead")),
+        copy: minDistPathToBox(sitePaths[1]!, rectOf(".about__copy")),
       };
 
       return {
@@ -2336,24 +2529,304 @@ test("round 11: thread geometry is G1-continuous with controlled curvature", asy
         maxConnectorMismatch: Math.round(maxConnectorMismatch * 10) / 10,
         minRadius: minRadius.map((r) => (r === null ? null : Math.round(r * 10) / 10)),
         site5MinX: Math.round(site5MinX * 10) / 10,
-        site1Clearance: {
-          statement: Math.round(site1Clearance.statement * 10) / 10,
-          profile: Math.round(site1Clearance.profile * 10) / 10,
-        },
+        site1Clearance: Object.fromEntries(
+          Object.entries(site1Clearance).map(([k, v]) => [k, v === null ? null : Math.round(v * 10) / 10]),
+        ),
+        chainLength: chainEls.length,
+        maxChainJointMismatch: Math.round(chainMismatch.value * 10) / 10,
+        maxStageJointMismatch: Math.round(maxStageJointMismatch * 10) / 10,
+        sheetConnectorMelody: Math.round(sheetConnectorMelody * 10) / 10,
+        minStageRadius: minStageRadius === null ? null : Math.round(minStageRadius * 10) / 10,
+        minConnectorRadius: minConnectorRadius === null ? null : Math.round(minConnectorRadius * 10) / 10,
       };
     });
 
     expect(geom.maxJointMismatch, `worst joint mismatch at ${vp.width}px`).toBeLessThanOrEqual(2);
     expect(geom.maxConnectorMismatch, `worst connector mismatch at ${vp.width}px`).toBeLessThanOrEqual(2);
-    // Per-segment min radius: handoff 20, site-1 exit 8 (mobile cap R=11),
-    // site-3 stadiums 10, site-6 4 (tiny mobile rise), contact approach 20.
-    // Site-2/4 are straight runs (null); any cubic there must still be >= 20.
-    const radiusFloor = [20, 8, 20, 10, 20, 20, 4];
+    // The chain is complete: site-2 + C0 + stage paths + C1 + stage paths
+    // + C2 + stage paths + C3 + site-4 + site-5 (20 desktop, 19 mobile -
+    // the mobile E2EE corridor has one fewer path).
+    expect(geom.chainLength, `project chain length at ${vp.width}px`).toBe(vp.width <= 700 ? 19 : 20);
+    expect(geom.maxChainJointMismatch, `worst chain joint mismatch at ${vp.width}px`).toBeLessThanOrEqual(2);
+    expect(geom.maxStageJointMismatch, `worst stage joint mismatch at ${vp.width}px`).toBeLessThanOrEqual(2);
+    // Re-measured round 12: B reported the Sheet connector -> melody
+    // joint as -4.6deg desktop / -3.7deg mobile, but those are the
+    // absolute end tangents; the melody departs at the same angle, so the
+    // joint mismatch itself is ~0deg. The geometry needed no fix; the
+    // measurement did.
+    expect(geom.sheetConnectorMelody, `Sheet connector -> melody joint at ${vp.width}px`).toBeLessThanOrEqual(2);
+    expect(geom.minStageRadius, `stage min radius at ${vp.width}px`).not.toBeNull();
+    expect(geom.minStageRadius!, `stage min radius at ${vp.width}px`).toBeGreaterThanOrEqual(5);
+    expect(geom.minConnectorRadius, `connector min radius at ${vp.width}px`).not.toBeNull();
+    expect(geom.minConnectorRadius!, `connector min radius at ${vp.width}px`).toBeGreaterThanOrEqual(8);
+    // Per-segment min radius: handoff 20, site-1 exit 5 (mobile jog
+    // R=6.15, forced by the 12px gutter jog; a smooth quarter-turn
+    // fillet, not a kink), site-3 C0 connector 10 (desktop R=60 turn,
+    // mobile R=16 jog), site-6 4 (tiny mobile rise), contact approach
+    // 20. Site-2/4 are straight runs (null); any cubic there must still
+    // be >= 20.
+    const radiusFloor = [20, 5, 20, 10, 20, 20, 4];
     geom.minRadius.forEach((r, i) => {
       if (r !== null) expect(r, `site-${i} min radius at ${vp.width}px`).toBeGreaterThanOrEqual(radiusFloor[i]!);
     });
     expect(geom.site5MinX, `site-5 min x at ${vp.width}px`).toBeGreaterThanOrEqual(0);
-    expect(geom.site1Clearance.statement, `site-1 statement clearance at ${vp.width}px`).toBeGreaterThanOrEqual(10);
-    expect(geom.site1Clearance.profile, `site-1 profile clearance at ${vp.width}px`).toBeGreaterThanOrEqual(10);
+    for (const [key, value] of Object.entries(geom.site1Clearance)) {
+      if (value !== null) expect(value, `site-1 ${key} clearance at ${vp.width}px`).toBeGreaterThanOrEqual(10);
+    }
+  }
+});
+
+test("round 12: glyph exit descends straight and Experience headline is traced", async ({ page }) => {
+  // Guards the round-12 site-thread work: the site-1 exit leaves the last
+  // About glyph junction heading straight down (G1 along the contour
+  // arrival tangent, vertical first drop), the Experience headline
+  // letters MEETS INFRASTRUCTURE. are traced on their outlines
+  // (transform alignment in the revealed state), the exp trace completes
+  // at full Experience scroll, and the exp connectors never cut the
+  // solid title lines above them ("WORKING WHERE IDENTITY").
+  const viewports = [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")].reduce(
+        (t, p) => t + p.getTotalLength(),
+        0,
+      ) > 1000,
+    );
+    // Measure in the REVEALED state: reveal tweens shift the Experience
+    // heading (+34px) on mobile until it plays, and the thread is built
+    // in final layout coordinates.
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = "auto";
+      document.querySelector("#experience-title")!.scrollIntoView({ block: "center" });
+    });
+    await page.waitForTimeout(2500);
+
+    const geom = await page.evaluate(() => {
+      type Pt = { x: number; y: number };
+      const sub = (a: Pt, b: Pt): Pt => ({ x: a.x - b.x, y: a.y - b.y });
+      const norm = (v: Pt): Pt => {
+        const l = Math.hypot(v.x, v.y) || 1;
+        return { x: v.x / l, y: v.y / l };
+      };
+      const angleBetween = (a: Pt, b: Pt) =>
+        (Math.acos(Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y))) * 180) / Math.PI;
+
+      // Exp contour transform alignment (same method as the About test).
+      const errors: number[] = [];
+      [...document.querySelectorAll<SVGPathElement>("[data-exp-glyph-contour]")].forEach((path) => {
+        const key = path.dataset.expGlyphKey!;
+        const target = document.querySelector<HTMLElement>(`.exp__glyph[data-exp-glyph-key='${key}']`)!;
+        const wordIndex = key.split("-")[1];
+        const baseline = document.querySelector<HTMLElement>(`[data-exp-glyph-baseline='${wordIndex}']`)!;
+        const match = path.getAttribute("transform")?.match(/translate\(([-\d.]+) ([-\d.]+)\) scale\(([-\d.]+)\)/);
+        if (!match) {
+          errors.push(Number.POSITIVE_INFINITY);
+          return;
+        }
+        errors.push(Math.abs(Number(match[1]) - (target.getBoundingClientRect().left + scrollX)));
+        errors.push(Math.abs(Number(match[2]) - (baseline.getBoundingClientRect().top + scrollY)));
+        errors.push(Math.abs(Number(match[3]) - Number.parseFloat(getComputedStyle(target).fontSize) / 1000));
+      });
+
+      // Site-1 exit departure: first segment vs the one-sided FORWARD
+      // tangent of the last-glyph contour at the exit junction. The
+      // junction is a sharp corner, so the closest sample is snapped to
+      // the nearest path vertex first: an eps chord straddling the corner
+      // reads diagonal (90deg). The last traced glyph depends on the
+      // rendered line count ("." on 2-line layouts, "U" on the 1-line
+      // 1280 layout), so the contour is found by proximity, not by key.
+      const site1 = document.querySelector<SVGPathElement>("[data-site-thread-segment='1']")!;
+      const siteSvg = site1.ownerSVGElement!;
+      const toSiteSpace = (el: SVGPathElement, distance: number): Pt | null => {
+        const pt = el.getPointAtLength(distance);
+        const pathMatrix = el.getScreenCTM();
+        const siteMatrix = siteSvg.getScreenCTM();
+        if (!pathMatrix || !siteMatrix) return null;
+        const q = new DOMPoint(pt.x, pt.y).matrixTransform(pathMatrix).matrixTransform(siteMatrix.inverse());
+        return { x: q.x, y: q.y };
+      };
+      const parseD = (d: string) => {
+        const tokens = d.match(/[MLC]|[-+]?\d*\.?\d+/g) || [];
+        const cmds: { cmd: string; from: Pt; c1?: Pt; c2?: Pt; p: Pt }[] = [];
+        let i = 0;
+        let cmd = "";
+        let cur: Pt = { x: 0, y: 0 };
+        while (i < tokens.length) {
+          const t = tokens[i]!;
+          if (t === "M" || t === "L" || t === "C") {
+            cmd = t;
+            i++;
+            continue;
+          }
+          const x = Number.parseFloat(tokens[i]!);
+          const y = Number.parseFloat(tokens[i + 1]!);
+          i += 2;
+          if (cmd === "M") {
+            cur = { x, y };
+            cmds.push({ cmd: "M", from: cur, p: { x, y } });
+            cmd = "L";
+          } else if (cmd === "L") {
+            cmds.push({ cmd: "L", from: cur, p: { x, y } });
+            cur = { x, y };
+          } else if (cmd === "C") {
+            const c1 = { x, y };
+            const c2 = { x: Number.parseFloat(tokens[i]!), y: Number.parseFloat(tokens[i + 1]!) };
+            const p = { x: Number.parseFloat(tokens[i + 2]!), y: Number.parseFloat(tokens[i + 3]!) };
+            i += 4;
+            cmds.push({ cmd: "C", from: cur, c1, c2, p });
+            cur = p;
+          }
+        }
+        return cmds;
+      };
+      const site1Cmds = parseD(site1.getAttribute("d") || "");
+      const junction = site1Cmds[0]!.p;
+      const first = site1Cmds.find((c) => c.cmd !== "M")!;
+      const departTan = first.cmd === "L" ? norm(sub(first.p, first.from)) : norm(sub(first.c1!, first.from));
+      const dropDx = first.cmd === "L" ? Math.abs(first.p.x - first.from.x) : null;
+      let exitDepartMismatch = Number.POSITIVE_INFINITY;
+      {
+        let lastGlyphKey: string | null = null;
+        let bestKeyDist = Number.POSITIVE_INFINITY;
+        for (const p of document.querySelectorAll<SVGPathElement>("[data-glyph-thread] path[data-glyph-key]")) {
+          const len = p.getTotalLength();
+          for (let s = 0; s <= len; s += len / 60) {
+            const q = toSiteSpace(p, s)!;
+            const dd = Math.hypot(q.x - junction.x, q.y - junction.y);
+            if (dd < bestKeyDist) {
+              bestKeyDist = dd;
+              lastGlyphKey = p.getAttribute("data-glyph-key");
+            }
+          }
+        }
+        const dot = document.querySelector<SVGPathElement>(
+          `path[data-glyph-key='${lastGlyphKey}'][data-glyph-contour='0']`,
+        )!;
+        const dotLen = dot.getTotalLength();
+        let bestD = 0;
+        let bestDist = Number.POSITIVE_INFINITY;
+        for (let s = 0; s <= dotLen; s += dotLen / 240) {
+          const q = toSiteSpace(dot, s)!;
+          const dd = Math.hypot(q.x - junction.x, q.y - junction.y);
+          if (dd < bestDist) {
+            bestDist = dd;
+            bestD = s;
+          }
+        }
+        // Vertex distances along the contour (endpoints of each command;
+        // Q segments sampled so the cumulative length stays accurate).
+        const dotCmds = parseD(dot.getAttribute("d") || "");
+        const verts = [0];
+        {
+          let acc = 0;
+          let prev: Pt | null = null;
+          for (const c of dotCmds) {
+            if (c.cmd === "M") {
+              prev = c.p;
+              continue;
+            }
+            if (c.cmd === "L") {
+              acc += Math.hypot(c.p.x - prev!.x, c.p.y - prev!.y);
+            } else {
+              let qprev = prev!;
+              for (let k = 1; k <= 20; k++) {
+                const t = k / 20;
+                const mt = 1 - t;
+                const q = {
+                  x: mt * mt * prev!.x + 2 * mt * t * c.c1!.x + t * t * c.p.x,
+                  y: mt * mt * prev!.y + 2 * mt * t * c.c1!.y + t * t * c.p.y,
+                };
+                acc += Math.hypot(q.x - qprev.x, q.y - qprev.y);
+                qprev = q;
+              }
+            }
+            verts.push(acc);
+            prev = c.p;
+          }
+        }
+        const snapD = verts.reduce((a, b) => (Math.abs(b - bestD) < Math.abs(a - bestD) ? b : a), verts[0]!);
+        const eps = Math.min(12, dotLen / 4);
+        const depA = toSiteSpace(dot, snapD)!;
+        const depB = toSiteSpace(dot, (snapD + eps) % dotLen)!;
+        exitDepartMismatch = angleBetween(norm(sub(depB, depA)), departTan);
+      }
+
+      // Exp connectors must clear the solid title lines above them.
+      const title = document.querySelector("#experience-title")!;
+      const range = document.createRange();
+      const textNode = [...title.childNodes].find((n) => n.nodeType === 3);
+      const solidBoxes: { left: number; right: number; top: number; bottom: number }[] = [];
+      if (textNode) {
+        const full = textNode.textContent || "";
+        const i0 = full.indexOf("Working where identity");
+        if (i0 >= 0) {
+          range.setStart(textNode, i0);
+          range.setEnd(textNode, i0 + "Working where identity".length);
+          for (const r of range.getClientRects()) {
+            solidBoxes.push({ left: r.left, right: r.right, top: r.top + scrollY, bottom: r.bottom + scrollY });
+          }
+        }
+      }
+      let minSolid = Number.POSITIVE_INFINITY;
+      for (const conn of document.querySelectorAll<SVGPathElement>(
+        "[data-glyph-connector][data-from-glyph^='exp-']",
+      )) {
+        const len = conn.getTotalLength();
+        for (let s = 0; s <= len; s += 2) {
+          const q = toSiteSpace(conn, s)!;
+          for (const b of solidBoxes) {
+            const dx = Math.max(b.left - q.x, 0, q.x - b.right);
+            const dy = Math.max(b.top - q.y, 0, q.y - b.bottom);
+            minSolid = Math.min(minSolid, Math.hypot(dx, dy));
+          }
+        }
+      }
+
+      return {
+        maxExpAlignError: Math.max(...errors),
+        expContourCount: document.querySelectorAll("[data-exp-glyph-contour]").length,
+        expGlyphCount: document.querySelectorAll(".exp__glyph").length,
+        expConnectorCount: document.querySelectorAll("[data-glyph-connector][data-from-glyph^='exp-']").length,
+        exitDepartMismatch: Math.round(exitDepartMismatch * 10) / 10,
+        dropDx: dropDx === null ? null : Math.round(dropDx * 10) / 10,
+        expConnectorSolidClearance: minSolid === Number.POSITIVE_INFINITY ? null : Math.round(minSolid * 10) / 10,
+      };
+    });
+
+    expect(geom.expGlyphCount, `exp glyph spans at ${vp.width}px`).toBe(20);
+    expect(geom.expContourCount, `exp contours at ${vp.width}px`).toBe(24);
+    expect(geom.expConnectorCount, `exp connectors at ${vp.width}px`).toBe(3);
+    expect(geom.maxExpAlignError, `exp alignment error at ${vp.width}px`).toBeLessThan(0.001);
+    expect(geom.exitDepartMismatch, `site-1 exit departure at ${vp.width}px`).toBeLessThanOrEqual(2);
+    if (geom.dropDx !== null) expect(geom.dropDx, `site-1 drop verticality at ${vp.width}px`).toBeLessThanOrEqual(0.01);
+    expect(geom.expConnectorSolidClearance, `exp connector solid clearance at ${vp.width}px`).not.toBeNull();
+    expect(geom.expConnectorSolidClearance!, `exp connector solid clearance at ${vp.width}px`).toBeGreaterThanOrEqual(10);
+
+    // Scroll through Experience: all 24 exp contours must complete.
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = "auto";
+      window.scrollTo(0, document.querySelector("#projects")!.getBoundingClientRect().top + scrollY - 100);
+    });
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll<SVGPathElement>("[data-exp-glyph-contour]")].every(
+        (p) => p.style.strokeDasharray === "none",
+      ),
+    );
+    const completion = await page.evaluate(() => ({
+      total: document.querySelectorAll("[data-exp-glyph-contour]").length,
+      done: [...document.querySelectorAll<SVGPathElement>("[data-exp-glyph-contour]")].filter(
+        (p) => p.style.strokeDasharray === "none",
+      ).length,
+    }));
+    expect(completion.total, `exp contours at ${vp.width}px`).toBe(24);
+    expect(completion.done, `exp trace completion at ${vp.width}px`).toBe(24);
   }
 });
