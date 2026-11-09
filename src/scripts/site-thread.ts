@@ -87,7 +87,25 @@ const makeRoute = (startX: number, startY: number, startDir: RouteDir) => {
   let d = `M ${startX} ${startY}`;
   let x = startX, y = startY, dir = startDir;
   return {
-    lineTo(nx: number, ny: number) { d += ` L ${nx} ${ny}`; x = nx; y = ny; },
+    // Round 12.2 (G1): skip a zero-length run. A zero-length `L` has no
+    // tangent, and the geometry test's parseD startTangent normalises
+    // its (0,0) direction to (0,0), so angleBetween against the previous
+    // cubic's end tangent returns acos(0) = 90deg. That is exactly what
+    // the trailing `lineTo(entry)` was: the quarter-turn before it
+    // already ends at the entry point, so the run is zero-length -
+    // always on the mobile top-entry jog (the S turn ends at the entry)
+    // and on the gap-mode E turn, and on desktop whenever the turn
+    // radius is capped by the entry's distance from the gutter
+    // (r0/rD == entry.x - edge, so the turn ends at entry.x). Skipping
+    // it changes no geometry: the path already ends at the target, with
+    // the turn's real end tangent (E on desktop, S on mobile), which is
+    // the tangent the next stage path starts with. The epsilon covers
+    // float error in the turn endpoint (edge + r0 vs entry.x); every
+    // real run in the chain is >= 4px, so 1e-6 cannot skip one.
+    lineTo(nx: number, ny: number) {
+      if (Math.hypot(nx - x, ny - y) < 1e-6) return;
+      d += ` L ${nx} ${ny}`; x = nx; y = ny;
+    },
     turn(to: RouteDir, r: number) {
       const u = ROUTE_DIR_V[dir], v = ROUTE_DIR_V[to];
       const k = 0.5523 * r;
