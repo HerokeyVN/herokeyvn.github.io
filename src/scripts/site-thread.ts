@@ -135,13 +135,17 @@ export function initSiteThread() {
   // Round 12: one entry per project stage, for the end-dot fade (the dot
   // fades in as the stage's exit path completes, exactly as the old
   // per-project applyThread did; before that it stays hidden so no dot
-  // floats at a stage exit the thread has not reached).
-  let stageDots: { dot: SVGCircleElement | null; artStart: number; artEnd: number; dotEnd: number }[] = [];
+  // floats at a stage exit the thread has not reached). The fade runs on
+  // the stage's THREAD span, not its article span, so a delayed or
+  // early-ended thread still gets its dot exactly as its exit path
+  // completes (round 12.2: the connector-span funding re-maps both ends
+  // of the thread span, see the chain timing below).
+  let stageDots: { dot: SVGCircleElement | null; threadStart: number; threadEnd: number; dotEnd: number }[] = [];
   const updateStageDots = (currentScroll: number, forceFull = false) => {
-    for (const { dot, artStart, artEnd, dotEnd } of stageDots) {
+    for (const { dot, threadStart, threadEnd, dotEnd } of stageDots) {
       if (!dot) continue;
       if (forceFull) { dot.style.removeProperty("opacity"); continue; }
-      const p = gsap.utils.clamp(0, 1, (currentScroll - artStart) / (artEnd - artStart));
+      const p = gsap.utils.clamp(0, 1, (currentScroll - threadStart) / (threadEnd - threadStart));
       const t = gsap.utils.clamp(0, 1, (p - (dotEnd - 0.03)) / 0.05);
       if (t >= 1) dot.style.removeProperty("opacity");
       else dot.style.setProperty("opacity", String(t));
@@ -760,7 +764,9 @@ export function initSiteThread() {
       // Normally the full article trigger window [artStart, artEnd], so
       // thread and DOM share one progress value; a later stage's
       // threadStart moves later to fund its entry connector's scroll
-      // span (see the chain timing below).
+      // span, and a previous stage's threadEnd moves earlier to fund
+      // the same connector from the other end (see the chain timing
+      // below).
       threadStart: number; threadEnd: number;
     };
     const buildStage = (slug: string): BuiltStage | null => {
@@ -1160,13 +1166,34 @@ export function initSiteThread() {
     // [artStart + delay, artEnd]), and the connector draws in
     // [prev last-path end, next.threadStart]. No two chain segments
     // overlap in scroll, so the filament stays continuous and the head
-    // dot never jumps. The delay is capped (15% of the Sheet span, 10%
-    // of the Piano span) so the mid-scrub assertions keep margin
-    // (Sheet front[1] needs thread_p(0.45) > 0.32, Piano drawn needs
-    // thread_p(0.15) > 0). The stage end dots still fade on the full
-    // span: a delayed last path completes at most
-    // (1 - dotEnd) * delay / span after dotEnd, inside the 0.05 fade.
-    const MIN_CONNECTOR_SPAN = 60;
+    // dot never jumps.
+    // Round 12.2 (connector spans): the delay-only funding left C1/C2
+    // at 60px of scroll, but the round-12.1 test requires every
+    // connector to draw over >= 150px (25px sweep steps, so the timing
+    // target is 180px for margin). Delay alone cannot fund that: the
+    // Sheet delay is capped at 15% of its span by spec 378 (front[1]
+    // must still be mid-draw at DOM p 0.45, which needs delay < 19%
+    // of the span, and margin under scrub lag caps it at 15%), and the
+    // Piano delay is capped at 11% (drawn > 0 at DOM p 0.15 needs
+    // delay < 15% of its span). The remaining span is funded from the
+    // other end of the previous stage: its thread ends early, which
+    // moves its last-path end (dotEnd of the thread span) earlier by
+    // dotEnd * early. E2EE ends 6% early (through-path still 0 at DOM
+    // p 0.38: thread_p 0.40 < 0.44 desktop / < 0.42 mobile; mid-draw
+    // at 0.55, done at 0.85), Sheet ends up to 15% early (front[1]
+    // at DOM p 0.45 stays 0.32-0.46, comfortably mid-draw, because
+    // ending early pushes the thread ahead). C3 is funded the same way
+    // (Piano ends early) instead of pushing chainEnd later: chainEnd
+    // is the Skills trace's prevEnd, and pushing it later compresses
+    // the Skills window, which shrinks its ~9px exit below the Bug 9
+    // sweep's sampling band (skills exit samples 0.26/0.704 straddle
+    // [0.3, 0.7] instead of landing in it). So chainEnd stays exactly
+    // where the baseline put it (max(s5, Piano artEnd + 1)) and the
+    // Piano early end funds C3 to the target. Measured budget
+    // (round122-span-budget.json): C1/C2/C3 timing spans are 180px at
+    // 1920x925, 1440x900, 1280x720 and 390x844 (C1 179.5px at 1440,
+    // where the 15% Sheet delay cap binds).
+    const CONNECTOR_SPAN_TARGET = 180;
     let chainSegments: Segment[] = [];
     let chainEnd = sProjEnd;
     if (chain) {
@@ -1175,20 +1202,42 @@ export function initSiteThread() {
       // p-window's end equals dotEnd in every plan).
       const exitEnd = (stage: BuiltStage) =>
         stage.threadStart + stage.plan.dotEnd * (stage.threadEnd - stage.threadStart);
-      // C1: delay the Sheet thread just enough for a real C1 span.
+      // C1: end the E2EE thread 6% early, then delay the Sheet thread
+      // to the target span (capped at 15% of the Sheet span by spec 378).
+      const e2eeSpan = e2ee.artEnd - e2ee.artStart;
+      e2ee.threadEnd = e2ee.artEnd - 0.06 * e2eeSpan;
       const slack1 = sheet.artStart - exitEnd(e2ee);
       const delaySheet = Math.min(
-        Math.max(0, MIN_CONNECTOR_SPAN - slack1),
+        Math.max(0, CONNECTOR_SPAN_TARGET - slack1),
         0.15 * (sheet.artEnd - sheet.artStart),
       );
       sheet.threadStart = sheet.artStart + delaySheet;
-      // C2: same, against the Sheet exit end on its delayed span.
+      // C2: delay the Piano thread to the target span (capped at 11% of
+      // the Piano span by spec 378), then end the Sheet thread early
+      // for whatever the delay could not fund: each early px moves the
+      // Sheet exit earlier by dotEnd (0.86) px.
       const slack2 = piano.artStart - exitEnd(sheet);
       const delayPiano = Math.min(
-        Math.max(0, MIN_CONNECTOR_SPAN - slack2),
-        0.1 * (piano.artEnd - piano.artStart),
+        Math.max(0, CONNECTOR_SPAN_TARGET - slack2),
+        0.11 * (piano.artEnd - piano.artStart),
       );
       piano.threadStart = piano.artStart + delayPiano;
+      const earlySheet = Math.min(
+        Math.max(0, (CONNECTOR_SPAN_TARGET - slack2 - delayPiano) / sheet.plan.dotEnd),
+        0.15 * (sheet.artEnd - sheet.artStart),
+      );
+      sheet.threadEnd = sheet.artEnd - earlySheet;
+      // C3: fund it by ending the Piano thread early, against the
+      // fixed chain end below (see the comment above): each early px
+      // moves the Piano exit (dotEnd 0.85) earlier by 0.85 px. The
+      // Piano mid check is unaffected - ending early only pushes its
+      // thread ahead (drawn at DOM p 0.15 stays ~0.05).
+      const chainEndBase = Math.max(s5, chain.stages[2]!.artEnd + 1);
+      const earlyPiano = Math.min(
+        Math.max(0, (CONNECTOR_SPAN_TARGET - (chainEndBase - exitEnd(piano))) / piano.plan.dotEnd),
+        0.15 * (piano.artEnd - piano.artStart),
+      );
+      piano.threadEnd = piano.artEnd - earlyPiano;
       const chainStart = Math.max(sProjEnd, Math.min(s4, chain.stages[0]!.artStart - 1));
       setTiming(siteSegments[2]!, sExp, sProjStart);
       setTiming(siteSegments[3]!, chainStart, chain.stages[0]!.artStart);
@@ -1233,13 +1282,17 @@ export function initSiteThread() {
       // Round 12.1 (Bug 4): C3 starts when the Piano belt visually
       // completes (its last path ends at dotEnd 0.85 of the art window),
       // not at artEnd - between belt completion and artEnd the user saw
-      // a finished belt, an exit dot and an empty gap. The chain end is
-      // pushed out so C3 keeps at least MIN_CONNECTOR_SPAN of scroll.
+      // a finished belt, an exit dot and an empty gap. The chain end
+      // stays at chainEndBase (max(s5, Piano artEnd + 1)): pushing it
+      // out to fund C3 would move the Skills trace's prevEnd and
+      // compress the Skills window (see the comment above), so C3 is
+      // funded by the Piano early end instead and keeps
+      // CONNECTOR_SPAN_TARGET of scroll that way.
       const pianoLastEnd = pianoSegs.at(-1)!.endScroll;
-      chainEnd = Math.max(s5, chain.stages[2]!.artEnd + 1, pianoLastEnd + MIN_CONNECTOR_SPAN);
+      chainEnd = chainEndBase;
       const c3Seg = mkConnectorSeg(connectorEls[2]!, pianoLastEnd, chainEnd);
       chainSegments = [siteSegments[3]!, ...e2eeSegs, c1Seg, ...sheetSegs, c2Seg, ...pianoSegs, c3Seg];
-      stageDots = chain.stages.map((stage) => ({ dot: stage.dot, artStart: stage.artStart, artEnd: stage.artEnd, dotEnd: stage.plan.dotEnd }));
+      stageDots = chain.stages.map((stage) => ({ dot: stage.dot, threadStart: stage.threadStart, threadEnd: stage.threadEnd, dotEnd: stage.plan.dotEnd }));
     } else {
       setTiming(siteSegments[2]!, sExp, sProjStart);
       stageDots = [];
