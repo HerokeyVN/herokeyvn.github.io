@@ -29,7 +29,10 @@ export type Segment = {
   endScroll: number;
   // Round 12: stage paths are driven by the CTM-scaled dashSetter
   // (round-8 fix) instead of the site thread's user-unit dash, because
-  // their SVGs use vector-effect: non-scaling-stroke.
+  // their SVGs use vector-effect: non-scaling-stroke. Bug 8: closed
+  // glyph contours are driven the same way (closedGlyphDashSetter
+  // below) - the site thread's user-unit dash saturated them ~1/scale
+  // early, so every letter flipped red at once.
   setDash?: (progress: number) => void;
   // Round 12: a stage path on the thread-back layer runs behind a
   // foreground structure; the head dot hides while it draws, so the dot
@@ -103,6 +106,47 @@ export type HeadlineTraceResult = HeadlineTraceGroup & {
   segments: Segment[];
   window: [number, number];
 };
+
+// Bug 8: CTM-scaled dash setter for CLOSED glyph contours. The render
+// loop used to paint these with raw user-unit dashes
+// (`${visible} ${drawLength - visible}`, offset -startDistance), but a
+// glyph contour lives in 1000-units-per-em space behind a
+// translate+scale(fontSize/1000) transform (scale ~0.12 desktop,
+// ~0.05 mobile), and the glyph-thread CSS sets vector-effect:
+// non-scaling-stroke - which makes Chromium apply the dash pattern in
+// SCREEN units (Round 8 Piano finding, verified by pixel checks). A
+// dash of `visible` user units therefore painted `visible` screen px of
+// a contour only drawLength*scale screen px long, so the painted
+// fraction was progress/scale: every contour saturated at progress
+// ~0.12, within 1-2px of scroll of its ~10-17px slice (measured:
+// Exp desktop, window 240px, total weight ~8700, slices 2-17px), and
+// the whole headline flipped red at once while the head dot
+// (positioned correctly in local units) had nowhere to travel. Scaling
+// the dash by the live CTM - the same fix dashSetter applies to stage
+// paths - makes the painted fraction equal progress, so each letter
+// draws along its contour and the dot rides the leading edge. The
+// offset is scaled too, so the painted run starts at the junction.
+export function closedGlyphDashSetter(path: SVGPathElement, startDistance: number) {
+  const length = path.getTotalLength();
+  return (progress: number) => {
+    const ctm = path.getScreenCTM();
+    const scale = ctm ? Math.hypot(ctm.a, ctm.b) : 1;
+    const screenLength = length * scale;
+    if (progress <= 0) {
+      path.style.strokeDasharray = `0 ${screenLength}`;
+      path.style.strokeDashoffset = String(-startDistance * scale);
+      path.style.visibility = "hidden";
+    } else if (progress >= 1) {
+      path.style.strokeDasharray = "none";
+      path.style.strokeDashoffset = "0";
+      path.style.visibility = "visible";
+    } else {
+      path.style.strokeDasharray = `${progress * screenLength} ${screenLength}`;
+      path.style.strokeDashoffset = String(-startDistance * scale);
+      path.style.visibility = "visible";
+    }
+  };
+}
 
 // Round 12.1 (Bug 1): the trace completes while the headline is framed.
 export function headlineTraceWindow(opts: {
@@ -332,7 +376,11 @@ export function createHeadlineTracer(deps: HeadlineTracerDeps) {
       glyph.paths.forEach((path, contourIndex) => {
         if (contourIndex > 0) segments.push({ drawLength: 0, weight: Math.max(18, groupFontSize * 0.18), startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 });
         const length = path.getTotalLength();
-        segments.push({ element: path, drawLength: length, weight: length * glyph.scale, startDistance: glyph.junctions[contourIndex]!.distance, kind: "closed", layer: "glyph", startScroll: 0, endScroll: 1 });
+        // Bug 8: closed contours carry the CTM-scaled dash setter, so
+        // they draw progressively in screen units instead of saturating
+        // ~1/scale early under non-scaling-stroke. Shared by the About
+        // headline and all four SectionHeading/Contact traces.
+        segments.push({ element: path, drawLength: length, weight: length * glyph.scale, startDistance: glyph.junctions[contourIndex]!.distance, kind: "closed", layer: "glyph", startScroll: 0, endScroll: 1, setDash: closedGlyphDashSetter(path, glyph.junctions[contourIndex]!.distance) });
         if (contourIndex > 0) segments.push({ drawLength: 0, weight: Math.max(18, groupFontSize * 0.18), startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 });
       });
       const next = order[glyphIndex + 1];

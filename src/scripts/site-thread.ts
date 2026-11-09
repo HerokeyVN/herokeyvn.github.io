@@ -230,6 +230,11 @@ export function initSiteThread() {
 
       const visible = segment.drawLength * progress;
       if (segment.kind === "closed") {
+        // Bug 8 fallback only: closed glyph contours now arrive with a
+        // CTM-scaled setDash (headline-trace.ts) and return above, so
+        // this branch no longer runs for them. It still uses raw
+        // user-unit dashes, which saturate ~1/scale early under
+        // non-scaling-stroke - do not route glyph contours through here.
         gsap.set(segment.element, {
           strokeDasharray: progress >= 1 ? "none" : `${visible} ${Math.max(0.01, segment.drawLength - visible)}`,
           strokeDashoffset: -segment.startDistance,

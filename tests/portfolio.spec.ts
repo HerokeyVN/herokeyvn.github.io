@@ -3086,3 +3086,95 @@ test("round 12.1: headline traces complete while framed, connectors paint, key-1
     }
   }
 });
+
+test("bug 8: headline glyph contours draw progressively and the head dot rides the contour", async ({ page }) => {
+  // Guards the Bug 8 fix: closed glyph contours used to be painted with
+  // raw user-unit dashes under vector-effect: non-scaling-stroke, so the
+  // dash saturated at progress ~scale (0.12 desktop) and every contour
+  // flipped hidden -> fully red within 1-2px of scroll of its slice -
+  // the whole headline flipped at once and the head dot had nowhere to
+  // travel. The CTM-scaled dash makes the painted fraction equal the
+  // scroll progress, so a fine sweep must observe several genuinely
+  // partial states (never a dash overshoot past 1), and the head dot
+  // must sit on the contour at the leading edge of the painted run.
+  await page.setViewportSize({ width: 1920, height: 925 });
+  await page.goto("/");
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")].reduce(
+      (t, p) => t + p.getTotalLength(),
+      0,
+    ) > 1000,
+  );
+  await page.evaluate(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+  });
+
+  const headingTop = await page.evaluate(
+    () => document.querySelector<HTMLElement>("#experience-title")!.getBoundingClientRect().top + scrollY,
+  );
+  const y0 = Math.max(0, Math.floor(headingTop - 925 * 0.55));
+  let partialCount = 0;
+  let maxFrac = 0;
+  let dotCapture: { dist: number; opacity: number } | null = null;
+  for (let y = y0; y <= y0 + 400; y += 4) {
+    await page.evaluate((yy) => window.scrollTo(0, yy), y);
+    await page.waitForTimeout(40);
+    const read = await page.evaluate(() => {
+      const path = document.querySelector<SVGPathElement>(
+        "path[data-exp-glyph-key='exp-0-0'][data-exp-glyph-contour='0']",
+      )!;
+      const len = path.getTotalLength();
+      const ctm = path.getScreenCTM();
+      const scale = ctm ? Math.hypot(ctm.a, ctm.b) : 1;
+      const dash = path.style.strokeDasharray;
+      let frac: number;
+      if (dash === "none") frac = 1;
+      else if (!dash || dash.startsWith("0 ")) frac = 0;
+      else frac = Number.parseFloat(dash.split(" ")[0]!) / (len * scale);
+      let dot: { dist: number; opacity: number } | null = null;
+      if (frac >= 0.3 && frac <= 0.7) {
+        // Junction for M is its topmost point (no transition anchors
+        // apply to M -> E): sample the contour like findJunction does.
+        let startD = 0;
+        let bestY = Number.POSITIVE_INFINITY;
+        for (let s = 0; s <= len; s += len / 240) {
+          const pt = path.getPointAtLength(s);
+          if (pt.y < bestY) {
+            bestY = pt.y;
+            startD = s;
+          }
+        }
+        const siteSvg = document.querySelector<SVGSVGElement>("[data-site-thread]")!;
+        const toSiteSpace = (distance: number) => {
+          const pt = path.getPointAtLength(distance);
+          const pathMatrix = path.getScreenCTM();
+          const siteMatrix = siteSvg.getScreenCTM();
+          if (!pathMatrix || !siteMatrix) return null;
+          const q = new DOMPoint(pt.x, pt.y).matrixTransform(pathMatrix).matrixTransform(siteMatrix.inverse());
+          return { x: q.x, y: q.y };
+        };
+        const expected = toSiteSpace((startD + len * frac) % len);
+        const dotEl = document.querySelector<SVGCircleElement>("[data-glyph-thread-end]")!;
+        const dx = Number(dotEl.getAttribute("cx"));
+        const dy = Number(dotEl.getAttribute("cy"));
+        const opacity = Number.parseFloat(getComputedStyle(dotEl).opacity);
+        if (expected) dot = { dist: Math.hypot(dx - expected.x, dy - expected.y), opacity };
+      }
+      return { frac, dot };
+    });
+    if (read.frac > 0.05 && read.frac < 0.95) partialCount++;
+    if (read.frac > maxFrac) maxFrac = read.frac;
+    if (!dotCapture && read.dot) dotCapture = read.dot;
+  }
+  // Before the fix the M contour showed zero partial states at 4px
+  // steps (it saturated within ~2px of scroll) and the dash overshot to
+  // ~2x the screen length; after the fix its ~17px slice yields
+  // several partial states and the fraction never exceeds 1.
+  expect(partialCount, "partially-drawn states for the M contour at 1920x925").toBeGreaterThanOrEqual(2);
+  expect(maxFrac, "max painted fraction for the M contour at 1920x925").toBeLessThanOrEqual(1.05);
+  expect(dotCapture, "head dot captured mid-draw at 1920x925").not.toBeNull();
+  expect(dotCapture!.opacity, "head dot visible mid-draw at 1920x925").toBeGreaterThan(0.9);
+  expect(dotCapture!.dist, "head dot distance from the contour leading edge at 1920x925").toBeLessThanOrEqual(6);
+});
+
