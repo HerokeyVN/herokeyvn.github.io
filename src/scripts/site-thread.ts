@@ -619,7 +619,12 @@ export function initSiteThread() {
     // centred on it.
     const emailGap = emailBox ? emailBox.left - edge : 24;
     const contactTheta = ((emailGap >= 20 ? 60 : 75) * Math.PI) / 180;
-    const contactHandle = emailGap >= 20 ? 28 : 16;
+    // Round 12.2 (chain G1): the arrival handle is 20, not 28. The
+    // single-cubic approach below now starts 6px lower (straight lead-in),
+    // and with the old 28 handle its radius measured 17.7, below the
+    // site-5 floor of 20; 20 keeps it at ~26. The arrival angle is
+    // unchanged (the handle stays on the same 60deg / 75deg ray).
+    const contactHandle = emailGap >= 20 ? 20 : 16;
     const approachCp2x = contactTargetX - Math.cos(contactTheta) * contactHandle;
     const approachCp2y = contactTargetY - Math.sin(contactTheta) * contactHandle;
     const gutterEndY = contactTargetY - 75;
@@ -634,7 +639,11 @@ export function initSiteThread() {
     const c5Start = contactMeasured?.exitEnd ?? { x: edge, y: contactTop };
     const site5D = c5Start.y <= gutterEndY
       ? `M ${edge} ${c5Start.y} C ${edge} ${c5Start.y + (gutterEndY - c5Start.y) / 3}, ${edge} ${c5Start.y + (2 * (gutterEndY - c5Start.y)) / 3}, ${edge} ${gutterEndY} C ${edge} ${contactTargetY - 31}, ${approachCp2x} ${approachCp2y}, ${contactTargetX} ${contactTargetY}`
-      : `M ${edge} ${c5Start.y} C ${edge} ${contactTargetY - 31}, ${approachCp2x} ${approachCp2y}, ${contactTargetX} ${contactTargetY}`;
+      // Round 12.2 (chain G1): straight 6px south lead-in, so the chain's
+      // 4px secant reads south at the joint (the approach cubic used to
+      // bend west inside its first 4 units, +3.8deg / +4.3deg). The first
+      // control point moves down by the same 6 to keep the handle length.
+      : `M ${edge} ${c5Start.y} L ${edge} ${c5Start.y + 6} C ${edge} ${contactTargetY - 31 + 6}, ${approachCp2x} ${approachCp2y}, ${contactTargetX} ${contactTargetY}`;
 
     // Site-2 career timeline (round 12, point 3): the thread leaves the
     // left gutter below the "Career Milestones" title, ramps onto the
@@ -666,27 +675,32 @@ export function initSiteThread() {
       const m1 = markerCentres[0]!, m2 = markerCentres[1]!;
       const mx = m1.x;
       // Entry branch on the gutter-to-marker gap dx = mx - edge.
-      // Narrow (dx <= 22, mobile): start below the title (dy ~24). The
-      // short ramp's radius is 8-9 there, and the title clearance is
-      // hypot(dx-5, 6) >= 13.
-      // Wide (dx > 22): start 7px above the title (dy ~50). The longer
-      // run opens the radius to 20+ and the title clearance to 12+.
-      // A single geometry cannot satisfy both bars at both ends: the
-      // long entry's title clearance drops to ~6.5 at dx=17, and the
-      // short entry's radius drops to ~5 at dx=35.
-      const dx = mx - edge;
+      // Round 12.2: ALWAYS start 7px above the title (dy ~50), even
+      // narrow (dx <= 22, mobile). The old narrow branch started below
+      // the title (dy ~24) and its radius measured 9.4, below the
+      // spec-2161 site-2 floor of 20 - and no south-to-south jog can do
+      // better in 24px of vertical: the two-arc optimum for a (17,24)
+      // jog is ~12.7. The long entry's radius is 42.2; its closest
+      // approach to the title is 4.3px west of the title's bottom-left
+      // corner, which is the geometric max for any radius >= 20 path
+      // here. The thread does not cross the title text (a span, not a
+      // spec-105 protected element), it passes just left of it.
       // Bug 9: the run starts where the Experience trace's exit ends
       // (the gutter point below the headline), not at the headline top.
       // The ramp start yB is below that point in practice; guard the
       // monotone gutter run if a layout ever puts it above.
-      const yB0 = dx <= 22 ? titleBottom + 6 : titleTop - 7;
+      const yB0 = titleTop - 7;
       const yB = Math.max(yB0, expTrace.exitEnd.y + 20);
       let exitD: string;
       if (width <= 1024) {
         // Single column (sidebar on top): exit in the gap between the
         // sidebar and the initiatives, so the run never crosses a card.
-        const yC = botOf(".experience__sidebar") + 10;
-        const yD = topOf(".experience__initiatives") - 10;
+        // Round 12.2: 4px margins, not 10. The gap is only 48px and the
+        // exit ramp needs dy 40 for radius 23.8 (the old dy 28 measured
+        // 12.5, below the site-2 floor of 20). The nearest protected
+        // content is the first initiative card, 58px below the ramp end.
+        const yC = botOf(".experience__sidebar") + 4;
+        const yD = topOf(".experience__initiatives") - 4;
         exitD = `L ${mx} ${yC} ${rampV(mx, yC, edge, yD)} L ${edge} ${projTop}`;
       } else {
         // Two columns: exit below the whole dossier, in the clear gap
@@ -812,8 +826,17 @@ export function initSiteThread() {
         const rE = Math.max(8, Math.min(48, gapWest / 2, rTurn));
         route.lineTo(entry.x, midGap);
         route.turn("S", rE);
-        route.lineTo(entry.x - rE, entry.y - rE);
-        route.turn("E", rE);
+        // Round 12.2 (chain G1): the final turn ends exactly at the
+        // entry, so the zero-length run after it is skipped and the
+        // chain's 4px secant samples the turn itself (tilted). Shrink
+        // the last turn so the run into the entry is a real 8px straight.
+        if (rE > 16) {
+          route.lineTo(entry.x - rE, entry.y - rE + 8);
+          route.turn("E", rE - 8);
+        } else {
+          route.lineTo(entry.x - rE, entry.y - rE);
+          route.turn("E", rE);
+        }
         route.lineTo(entry.x, entry.y);
         return;
       }
@@ -841,7 +864,12 @@ export function initSiteThread() {
       route.lineTo(edge + rTurnEff, midGap);
       route.turn("S", rTurnEff);
       if (entryDir === "E") {
-        const rD = Math.min(60, Math.max(4, entry.x - edge));
+        // Round 12.2 (chain G1): the turn radius leaves a real 8px
+        // straight east run into the entry. The old radius capped at
+        // entry.x - edge, so the run was zero-length, the G1 fix skipped
+        // it, and the chain's 4px secant sampled the turn itself (tilted
+        // +4.5deg / +5.6deg at the test widths).
+        const rD = Math.min(60, Math.max(4, entry.x - edge - 8));
         route.lineTo(edge, entry.y - rD);
         route.turn("E", rD);
         route.lineTo(entry.x, entry.y);
@@ -904,10 +932,27 @@ export function initSiteThread() {
       // C0: left gutter down to the E2EE entry. Bug 9: starts where the
       // Projects trace's exit ends (the gutter point below the headline),
       // not at the headline top.
+      //
+      // Round 12.2 (chain G1): start a connector with a straight run
+      // before its first turn, so the chain's 4px secant samples the run,
+      // not the turn. A turn-first start tilts the secant by ~115/r
+      // degrees (+2.4deg at r=48, +4.5deg at r=25). The turn shrinks by
+      // the run length, so the descent x is unchanged. Guarded to a
+      // zero-length run when the radius cannot fund one.
+      const leadEast = (route: ReturnType<typeof makeRoute>, x: number, y: number, r: number) => {
+        const lead = Math.min(8, Math.max(0, r - 8));
+        route.lineTo(x + lead, y);
+        route.turn("S", r - lead);
+      };
       const projStart = projMeasured?.exitEnd ?? { x: edge, y: projTop };
       const c0 = makeRoute(projStart.x, projStart.y, "S");
       if (e2eeStage.entryDir === "E") {
-        const r0 = Math.min(60, Math.max(4, e2eeStage.entry.x - edge), Math.max(4, e2eeStage.entry.y - projStart.y - 8));
+        // Round 12.2 (chain G1): the turn radius leaves a real 8px
+        // straight east run into the entry (same zero-length-run defect
+        // as the approachEntry E-branch: the old radius capped at
+        // entry.x - edge, so the run was skipped and the chain's 4px
+        // secant sampled the turn, tilted +4.5deg / +5.6deg).
+        const r0 = Math.min(60, Math.max(4, e2eeStage.entry.x - edge - 8), Math.max(4, e2eeStage.entry.y - projStart.y - 8));
         c0.lineTo(edge, e2eeStage.entry.y - r0);
         c0.turn("E", r0);
         c0.lineTo(e2eeStage.entry.x, e2eeStage.entry.y);
@@ -935,7 +980,7 @@ export function initSiteThread() {
         const rA = twoCol && e2eeContent
           ? Math.max(6, Math.min(48, e2eeContent.left - e2eeStage.exit.x - 6))
           : Math.min(60, Math.max(8, rightEdge - e2eeStage.exit.x));
-        c1.turn("S", rA);
+        leadEast(c1, e2eeStage.exit.x, e2eeStage.exit.y, rA);
         c1.lineTo(e2eeStage.exit.x + rA, g12mid - rG12);
         c1.turn("W", rG12);
       } else {
@@ -949,7 +994,7 @@ export function initSiteThread() {
       const c2 = makeRoute(sheetStage.exit.x, sheetStage.exit.y, sheetStage.exitDir);
       if (sheetStage.exitDir === "E") {
         const rA = Math.min(60, Math.max(8, rightEdge - sheetStage.exit.x));
-        c2.turn("S", rA);
+        leadEast(c2, sheetStage.exit.x, sheetStage.exit.y, rA);
         c2.lineTo(sheetStage.exit.x + rA, g23mid - rG23);
         c2.turn("W", rG23);
       } else {
@@ -984,7 +1029,7 @@ export function initSiteThread() {
         const rA = twoCol && pianoContent && pianoContent.left > pianoStage.exit.x + 16
           ? Math.min(60, Math.max(8, (pianoContent.left - pianoStage.exit.x) / 2))
           : Math.min(60, Math.max(8, rightEdge - pianoStage.exit.x));
-        c3.turn("S", rA);
+        leadEast(c3, pianoStage.exit.x, pianoStage.exit.y, rA);
         c3DescentX = pianoStage.exit.x + rA;
       } else {
         exitJogSouth(c3, pianoStage);
@@ -992,7 +1037,11 @@ export function initSiteThread() {
       }
       const p3Bot = botOf("#sky-auto-piano");
       c3.lineTo(c3DescentX, p3Bot);
-      const c3d = `${c3.d} ${stadium(c3DescentX, p3Bot, edge, skillsTop)}`;
+      // Round 12.2 (chain G1): the stadium's last turn ends heading
+      // south, so the chain's 4px secant samples the turn (tilted
+      // +2.3deg / +2.6deg / +3.4deg). End the stadium 10px early and run
+      // straight south to skillsTop instead; the endpoint is unchanged.
+      const c3d = `${c3.d} ${stadium(c3DescentX, p3Bot, edge, skillsTop - 10)} L ${edge} ${skillsTop}`;
 
       chain = { c0d: c0.d, c1d: c1.d, c2d: c2.d, c3d, stages: [e2eeStage, sheetStage, pianoStage] };
     }

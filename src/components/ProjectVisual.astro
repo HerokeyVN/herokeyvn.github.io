@@ -81,7 +81,12 @@ const E2EE_FRONT_D = [
   // only the lower-left strokes of E at entry (the entry point 714,280
   // sits mid-E, so ~25 units of contact there is unavoidable) and passing
   // through the seal ring's lower arcs on its way out.
-  "M 714 280 C 734 280, 742 304, 764 304 L 856 304 C 872 304, 886 280, 900 280",
+  // Round 12.2: the dip and the rise are the original cubics translated
+  // (+10x / -8x, same radii), with a straight east run at each end, so
+  // the chain's 4-unit secant samples read the true east tangents at the
+  // joints (the dip used to dive inside its first 4 units, +4.7deg; the
+  // rise used to climb inside its last 4, -8.6deg).
+  "M 714 280 L 724 280 C 744 280, 752 304, 774 304 L 848 304 C 864 304, 878 280, 892 280 L 900 280",
 ];
 // Thread segments, mobile (x = 280). Frames stacked: f1 y 202-258 (mid),
 // f2 y 280-336 (foreground), f3 y 358-414 (mid). The behind-segment runs
@@ -94,7 +99,11 @@ const E2EE_BACK_D_MOBILE = [
 ];
 const E2EE_FRONT_D_MOBILE = [
   "M 280 0 L 280 280", // in front of the letters and frame 1
-  "M 280 336 L 280 440 C 280 462, 348 448, 348 472 L 348 500 C 348 520, 280 514, 280 534", // jog right around the sealed message, back to the centre line
+  // Round 12.2: the return cubic is the original translated 6 units up,
+  // so it completes at y 528 with a straight 6-unit south run into the
+  // bottom exit (same radius 8.0); the original completed its turn inside
+  // its last 4 units, reading +14deg off south at the joint.
+  "M 280 336 L 280 440 C 280 462, 348 448, 348 472 L 348 494 C 348 514, 280 508, 280 528 L 280 534", // jog right around the sealed message, back to the centre line
   "M 280 534 L 280 560",
 ];
 
@@ -198,9 +207,12 @@ const PIANO_FRONT_D = [
 // Belt, mobile (560x560): down the left edge, across the mid tier (dips
 // onto H at x 90 and L at x 378, y 176-196), then down the right edge,
 // passing behind the front tier (y 258-342) before exiting at the bottom.
+// Round 12.2: the last turn completes at y 185 with a straight 8-unit
+// south run into the back path (it used to turn inside its last 4 units,
+// reading 88.0deg vs the back path's 90deg).
 const PIANO_BACK_D_MOBILE = ["M 500 193 L 500 320"];
 const PIANO_FRONT_D_MOBILE = [
-  "M 30 0 L 30 135 C 30 150, 40 163, 55 163 C 72 163, 72 191, 90 191 C 108 191, 108 163, 125 163 L 340 163 C 357 163, 357 191, 375 191 C 393 191, 393 163, 410 163 L 470 163 C 490 163, 500 173, 500 193",
+  "M 30 0 L 30 135 C 30 150, 40 163, 55 163 C 72 163, 72 191, 90 191 C 108 191, 108 163, 125 163 L 340 163 C 357 163, 357 191, 375 191 C 393 191, 393 163, 410 163 L 470 163 C 490 163, 500 173, 500 185 L 500 193",
   "M 500 320 L 500 560",
 ];
 ---
@@ -322,12 +334,19 @@ const PIANO_FRONT_D_MOBILE = [
         0.85 desktop / 1.59 mobile, vs 10.7 / 11.5 for this two-segment
         form). No hook, no loop. Desktop clears the featured card by 24,
         its shadow by 8.7, Open Player by 29, and the practice strip by
-        12.6; mobile clears the practice header by 3.6 and the grid by 8.5. */}
+        12.6; mobile clears the practice header by 3.6 and the grid by 8.5.
+        Round 12.2: the scoop's return is split (turn cubic + short
+        straight approach along the -4.6deg / -3.8deg arrival), so the
+        chain's 4-unit secant reads the true arrival tangent at note 0
+        (the return used to climb inside its last 4 units, -10.1deg
+        desktop / -1.7deg mobile vs -4.6deg / -3.8deg); the mobile dive
+        also starts with a straight 8-unit south run (it used to bend west
+        inside its first 4 units, +4.5deg). */}
     <svg class="project-thread-svg project-thread-svg--back project-thread-svg--desktop" data-layer="thread-back" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 1192 104 C 916.5 365.8, 878.3 366.7, 850 395 C 786.4 458.6, 776.1 398.4, 806 396"></path>
+      <path class="project-thread-path" d="M 1192 104 C 916.5 365.8, 878.3 366.7, 850 395 C 786.4 458.6, 768.1 399, 798 396.6 C 803 396.2, 801 396.4, 806 396"></path>
     </svg>
     <svg class="project-thread-svg project-thread-svg--back project-thread-svg--mobile" data-layer="thread-back" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 185 300 C 185 340, 95 340, 35 340 C 15 340, 15 382.7, 56 380"></path>
+      <path class="project-thread-path" d="M 185 300 L 185 308 C 185 340, 95 340, 35 340 C 15 340, 14.1 382.8, 44 380.8 C 49 380.5, 51 380.3, 56 380"></path>
     </svg>
 
     <div class="layer layer--fg" data-layer="fg">
@@ -366,16 +385,27 @@ const PIANO_FRONT_D_MOBILE = [
     </div>
 
     <svg class="project-thread-svg project-thread-svg--front project-thread-svg--desktop" data-layer="thread-front" data-variant="desktop" viewBox="0 0 1440 560" aria-hidden="true">
-      <path class="project-thread-path" d="M 0 68 L 878 68 C 1000 68, 1232 66, 1192 104"></path>
+      {/* Round 12.2: the hook's last cubic is split (turn cubic + short
+          straight approach along the 136.5deg arrival), so the chain's
+          4-unit secant reads the true arrival tangent at the connector
+          start (the hook used to turn inside its last 4 units, 131.6deg
+          vs 136.5deg). */}
+      <path class="project-thread-path" d="M 0 68 L 878 68 C 1000 68, 1241.3 57.2, 1197.8 98.5 C 1194.2 101.9, 1195.6 100.6, 1192 104"></path>
       <path class="project-thread-path" d={SHEET_MELODY}></path>
-      <path class="project-thread-path" d="M 1353 352 C 1390 349, 1385 400, 1370 440 C 1358 472, 1347 478, 1347 496 C 1347 510.4, 1358.6 522, 1373 522"></path>
+      {/* Round 12.2: the descent starts with a short straight run along
+          its -4.6deg departure (it used to bend south inside its first 4
+          units, -1.6deg vs the melody's -4.9deg arrival). */}
+      <path class="project-thread-path" d="M 1353 352 L 1361.6 351.3 C 1390 349, 1385 400, 1370 440 C 1358 472, 1347 478, 1347 496 C 1347 510.4, 1358.6 522, 1373 522"></path>
       <path class="project-thread-path" d="M 1373 522 L 1440 522"></path>
       <circle class="project-thread-dot project-thread-dot--end" cx="1436" cy="522" r="4"></circle>
     </svg>
     <svg class="project-thread-svg project-thread-svg--front project-thread-svg--mobile" data-layer="thread-front" data-variant="mobile" viewBox="0 0 560 560" aria-hidden="true">
       <path class="project-thread-path" d="M 34 0 L 34 210 C 34 236, 58 246, 90 246 L 150 246 C 172 246, 185 258, 185 280 L 185 300"></path>
       <path class="project-thread-path" d={SHEET_MELODY_MOBILE}></path>
-      <path class="project-thread-path" d="M 504 350 C 540 348, 520 400, 520 440 C 520 470, 484 480, 484 507"></path>
+      {/* Round 12.2: same straight lead-in as desktop, along the -3.2deg
+          departure (the mobile descent used to read +0.2deg over its
+          first 4 units vs the melody's -3.9deg arrival). */}
+      <path class="project-thread-path" d="M 504 350 L 512 349.6 C 540 348, 520 400, 520 440 C 520 470, 484 480, 484 507"></path>
       <path class="project-thread-path" d="M 484 507 L 484 560"></path>
       <circle class="project-thread-dot project-thread-dot--end" cx="484" cy="556" r="4"></circle>
     </svg>
