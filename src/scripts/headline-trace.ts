@@ -10,6 +10,21 @@
 // travel), traces the outlined word, and returns to the gutter, so the
 // thread never teleports between the headline and the gutter run.
 //
+// Bug 9 (2026-11-09): the "leaves the gutter / returns to the gutter"
+// above was literal - the entry/exit were hidden segments (no element,
+// drawLength 0), so the main thread vanished in the gutter while the
+// letters drew red via a separate glyph overlay with a separate head
+// dot. Key: the main thread must RUN INTO the letters like the hero.
+// traceHeadline now builds VISIBLE entry/exit paths (data-headline-entry
+// / data-headline-exit in the glyph connector group): gutter down, then
+// into the first junction (direct, or via the inter-line gap when filled
+// text precedes the traced word on its line), and out of the last
+// junction (its rightmost point, departure south-east) down to a clear
+// band below the title, across to the left gutter, and south again.
+// The trace IS the main thread: one dot travels gutter -> letters ->
+// gutter, and the next site segment starts where the exit ends
+// (traceHeadline returns exitEnd for the caller to use).
+//
 // Timing model (Bug 1 fix, shared by all four SectionHeading/Contact
 // traces): a trace starts once its heading top has reached 55% viewport
 // height and completes when the last line's bottom reaches ~72%
@@ -78,6 +93,10 @@ export type HeadlineTraceConfig = {
   snake?: boolean;
   // Override the last glyph's junction by key.
   exitJunctionFractions?: Record<string, number>;
+  // Section element the heading belongs to (for the exit band: the next
+  // content top below the title). Falls back to the heading's own bottom
+  // when unset.
+  sectionEl?: HTMLElement | null;
 };
 
 export type HeadlineTraceGroup = {
@@ -90,7 +109,8 @@ export type HeadlineTraceGroup = {
 };
 
 export type HeadlineTraceChain = {
-  // Gutter point the trace leaves from and returns to.
+  // Gutter point the trace leaves from. The trace returns to the gutter
+  // too, but at the exit end (see exitEnd), not at the anchor.
   anchor: Junction;
   // Scroll position where the previous segment ends.
   prevEnd: number;
@@ -100,11 +120,29 @@ export type HeadlineTraceChain = {
   // Optional cap on the trace end (Projects: the first article must
   // still start after the trace).
   endCap?: number;
+  // Gutter Y where the following site segment starts its own approach
+  // (Contact only: site-5's email approach starts at gutterEndY). The
+  // exit's final turn shrinks so it ends high enough above this point
+  // for the approach cubic to keep radius >= 20 (measured offline:
+  // exit end 8356 -> r 3.5, 8344 -> r 27.6 at 1440px).
+  gutterEndY?: number;
+};
+
+export type HeadlineTraceMeasure = HeadlineTraceGroup & {
+  // Visible entry/exit segments (untimed; traceHeadline times them).
+  entry: Segment;
+  exit: Segment;
+  // Document point where the exit ends and the next site segment starts.
+  exitEnd: { x: number; y: number };
+  // Entry route: "direct" (gutter -> turn -> junction) or "gap" (gutter
+  // -> inter-line gap run -> curve into the junction).
+  entryKind: "direct" | "gap";
 };
 
 export type HeadlineTraceResult = HeadlineTraceGroup & {
   segments: Segment[];
   window: [number, number];
+  exitEnd: { x: number; y: number };
 };
 
 // Bug 8: CTM-scaled dash setter for CLOSED glyph contours. The render
@@ -426,30 +464,320 @@ export function createHeadlineTracer(deps: HeadlineTracerDeps) {
     };
   };
 
-  // Full headline trace: collect + build, wrap with hidden entry/exit
+  // Bug 9: visible entry/exit geometry for one headline trace (no
+  // timing). The entry runs from the gutter anchor into the first glyph
+  // junction; the exit runs out of the last glyph junction to a clear
+  // band below the title, across to the left gutter, and south again,
+  // ending at exitEnd where the next site segment starts. Both are real
+  // open paths in the glyph connector group (site space, scale 1, so
+  // the render loop's user-unit open dash paints them exactly), driven
+  // by the same head dot as the contours. Returns null when the heading
+  // has no traced glyphs (the caller then keeps the old anchor wiring).
+  const measureHeadlineTrace = (
+    config: HeadlineTraceConfig,
+    anchor: Junction,
+    isMobile: boolean,
+    opts?: { gutterEndY?: number },
+  ): HeadlineTraceMeasure | null => {
+    const group = collectAndBuild(config, isMobile);
+    if (!group.order.length || !group.first || !group.last) return null;
+    const firstGlyph = group.order[0]!;
+    const lastGlyph = group.order[group.order.length - 1]!;
+    const firstPath = firstGlyph.paths[0]!;
+    const lastPath = lastGlyph.paths[0]!;
+    const qk = 0.5523;
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+    // A contour's ink extent on one rendered line, in site space.
+    const lineInk = (lineIndex: number, top: boolean) => {
+      let value = top ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+      for (const glyph of group.order.filter((g) => g.lineIndex === lineIndex)) {
+        const path = glyph.paths[0]!;
+        const len = path.getTotalLength();
+        for (let s = 0; s <= len; s += Math.max(2, len / 60)) {
+          const p = pointInSiteSpace(path, s);
+          if (!p) continue;
+          value = top ? Math.min(value, p.y) : Math.max(value, p.y);
+        }
+      }
+      return value;
+    };
+
+    // --- First junction: TOP by default. The contour departs the TOP
+    // junction heading east for exp/proj/skills, so the entry arrives
+    // heading east. Contact's Y departs its TOP junction diagonally, so
+    // the entry uses the LEFT junction instead (departure east); the
+    // contour's start moves with it (no visible connector attaches to
+    // the first glyph of any headline, so nothing else references the
+    // old junction).
+    let firstJ = firstGlyph.junctions[0]!;
+    let firstDep = contourDeparture(firstPath, firstJ.distance);
+    // Whether the first junction is the glyph's LEFT point (Contact's
+    // Y) rather than its TOP point; a LEFT junction's run stays on the
+    // junction's y (no other contour point shares it), a TOP junction's
+    // run sits 3px above the ink top (the glyph's other peaks do).
+    let firstIsLeft = false;
+    const hasOutgoingConnector = (key: string) =>
+      Boolean(connectorGroup.querySelector(`[data-glyph-connector][data-from-glyph='${key}']`));
+    if (!(Math.abs(firstDep.x) > 0.9 && Math.abs(firstDep.y) < 0.15) && !hasOutgoingConnector(firstGlyph.key)) {
+      const leftJ = findJunction(firstPath, firstGlyph.left, firstGlyph.baselineY, firstGlyph.scale, { mode: "left" });
+      const leftDep = contourDeparture(firstPath, leftJ.distance);
+      if (Math.abs(leftDep.x) > 0.9 && Math.abs(leftDep.y) < 0.15) {
+        firstJ = leftJ;
+        firstDep = leftDep;
+        firstIsLeft = true;
+        firstGlyph.junctions[0] = leftJ;
+        group.first = leftJ;
+        const seg = group.segments.find((s) => s.element === firstPath);
+        if (seg) { seg.startDistance = leftJ.distance; seg.setDash = closedGlyphDashSetter(firstPath, leftJ.distance); }
+      }
+    }
+
+    // --- Last junction: the RIGHTMOST point of the "." (all four
+    // headlines end with "."). The contour arrives there heading
+    // south-east, so the exit leaves south-east, curves south, and drops
+    // clear of the title. Same move-the-start treatment as the first
+    // junction (no visible connector attaches to the last glyph).
+    let lastJ = lastGlyph.junctions[0]!;
+    const hasIncomingConnector = (key: string) =>
+      Boolean(connectorGroup.querySelector(`[data-glyph-connector][data-to-glyph='${key}']`));
+    if (!hasIncomingConnector(lastGlyph.key)) {
+      const rightJ = findJunction(lastPath, lastGlyph.left, lastGlyph.baselineY, lastGlyph.scale, { mode: "right" });
+      lastJ = rightJ;
+      lastGlyph.junctions[0] = rightJ;
+      group.last = rightJ;
+      const seg = group.segments.find((s) => s.element === lastPath);
+      if (seg) { seg.startDistance = rightJ.distance; seg.setDash = closedGlyphDashSetter(lastPath, rightJ.distance); }
+    }
+    const lastArr = contourArrival(lastPath, lastJ.distance);
+
+    // --- Entry: direct when the horizontal run at the junction's height
+    // from the gutter to the junction clears the filled text on that
+    // line (Range rects of the heading's filled text node). Blocked when
+    // filled text precedes the traced word on its line (exp: IDENTITY
+    // before MEETS; skills: the tools line before USED).
+    const headingEl = config.headingEl!;
+    let directBlocked = false;
+    const textNode = [...headingEl.childNodes].find(
+      (n) => n.nodeType === 3 && (n.textContent ?? "").trim().length > 0,
+    );
+    if (textNode) {
+      // A Range rect spans the font's ascent+descent (~1.2em), which is
+      // TALLER than the 0.88 line-height box and overlaps the next
+      // line's ink top (proj at 1920: the T's ink top 4202.7 sits inside
+      // the filled line's rect [4063.75, 4207.75] although it is on the
+      // next line; and at 390 the next line's ink top sits within 2px
+      // of the previous line's box bottom). Line boxes cannot tell
+      // "same line" from "next line" here, so check per character: a
+      // filled character blocks the run only when it sits on the first
+      // glyph's own line (its rect top matches the glyph span's top)
+      // and its x-range overlaps the run. The span carries the dataset
+      // key (data-heading-glyph-key for the SectionHeading headlines),
+      // not the contour key attribute.
+      const spanAttr = `data-${config.keyDataset.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+      const spanEl = headingEl.querySelector<HTMLElement>(`[${spanAttr}='${firstGlyph.key}']`);
+      const firstLineTop = spanEl ? docBox(spanEl).top : firstJ.y;
+      const text = textNode as Text;
+      for (let i = 0; i < text.length; i++) {
+        const range = document.createRange();
+        range.setStart(text, i);
+        range.setEnd(text, i + 1);
+        const rect = range.getClientRects()[0];
+        if (!rect) continue;
+        const top = rect.top + scrollY, left = rect.left + scrollX, right = rect.right + scrollX;
+        if (Math.abs(top - firstLineTop) <= 4 && right > anchor.x + 4 && left < firstJ.x - 4) {
+          directBlocked = true;
+          break;
+        }
+      }
+    }
+    const firstInkTop = lineInk(firstGlyph.lineIndex, true);
+    // Direct when the run clears the filled text AND the contour
+    // departs east (so the run arrives along the departure). Otherwise
+    // the gap route, whose final curve arrives along the departure.
+    const eastDep = Math.abs(firstDep.x) > 0.9 && Math.abs(firstDep.y) < 0.15;
+    const entryKind: "direct" | "gap" = directBlocked || !eastDep ? "gap" : "direct";
+    let entryD: string;
+    if (entryKind === "direct") {
+      // Gutter down, quarter-turn onto the run, straight into the
+      // junction heading east (the contour's departure). The run sits
+      // 3px ABOVE the ink top, not on it: a TOP junction's glyph has
+      // other peaks sharing the cap height (the M's left peak is at
+      // exactly the junction's y, 100px away), so a run on the ink-top
+      // line passes through them. A LEFT junction (Contact's Y) has no
+      // other contour point at its height on the run, so its run stays
+      // on the junction's y. When the junction sits close to the
+      // gutter there is no room for a run: the turn flows straight
+      // into the final curve, whose drop shrinks so the curve keeps
+      // radius >= 4 (a cubic with span S and drop D has min radius
+      // ~S*S/(4*D), measured offline).
+      const runDrop = firstIsLeft ? 0 : 3;
+      const r0 = clamp(firstJ.x - anchor.x - 4, 4, 16);
+      const k0 = qk * r0;
+      const runY = firstJ.y - runDrop;
+      const avail = firstJ.x - (anchor.x + r0);
+      if (avail >= 9) {
+        const kx = Math.min(24, avail - 2);
+        entryD = `M ${anchor.x} ${anchor.y} L ${anchor.x} ${runY - r0} C ${anchor.x} ${runY - r0 + k0}, ${anchor.x + r0 - k0} ${runY}, ${anchor.x + r0} ${runY} L ${firstJ.x - kx} ${runY} C ${firstJ.x - kx / 2} ${runY}, ${firstJ.x - kx / 2} ${firstJ.y}, ${firstJ.x} ${firstJ.y}`;
+      } else {
+        // Tight: shrink the turn so the final curve has room, then
+        // drop into the junction in one curve (no run).
+        const r = Math.max(4, firstJ.x - anchor.x - 7);
+        const k = qk * r;
+        const s = firstJ.x - (anchor.x + r);
+        const d = Math.min(runDrop, (s * s) / 18);
+        const midX = (anchor.x + r + firstJ.x) / 2;
+        const ry = firstJ.y - d;
+        entryD = `M ${anchor.x} ${anchor.y} L ${anchor.x} ${ry - r} C ${anchor.x} ${ry - r + k}, ${anchor.x + r - k} ${ry}, ${anchor.x + r} ${ry} C ${midX} ${ry}, ${midX} ${firstJ.y}, ${firstJ.x} ${firstJ.y}`;
+      }
+    } else {
+      // Gap route: gutter down to the inter-line slot between the solid
+      // line above and the traced line, east along the slot, then a
+      // shallow curve down into the junction arriving east. The slot is
+      // centred between the line-above ink bottom (its baseline plus a
+      // 0.15em descender allowance) and the traced line's ink top, both
+      // live-measured; at desktop the slot is ~20px wide.
+      const wordIndex = Number(firstGlyph.key.split("-")[config.wordPart]);
+      const baselineEl = headingEl.querySelector<HTMLElement>(`[${config.baselineAttr}='${wordIndex}']`);
+      const firstBaseline = baselineEl ? docBox(baselineEl).top : firstJ.y;
+      const lineHeightPx = Number.parseFloat(getComputedStyle(headingEl).lineHeight) || group.fontSize * 0.88;
+      const headingTop = docBox(headingEl).top;
+      const slotTop = firstBaseline - lineHeightPx + 0.15 * group.fontSize;
+      const slotBottom = firstInkTop;
+      let gapY: number;
+      if (firstBaseline - lineHeightPx < headingTop - 2 || slotBottom - slotTop < 4) {
+        // No line above (or no usable slot): fall back to the direct run
+        // rather than routing into the meta band above the title. The
+        // Bug 9 test fails loudly if this ever triggers.
+        // eslint-disable-next-line no-console
+        console.warn(`[bug9] ${config.id}: no inter-line slot for the entry, using direct run`);
+        gapY = firstJ.y;
+      } else {
+        gapY = clamp((slotTop + slotBottom) / 2, slotTop + 2, slotBottom - 2);
+      }
+      const r1 = Math.min(clamp((gapY - anchor.y) / 3, 8, 24), Math.max(8, firstJ.x - anchor.x - 6));
+      const k1 = qk * r1;
+      // The final curve must start ahead of the turn's end: when the
+      // junction sits close to the gutter there is no room for a run,
+      // so the curve starts at the turn's end (same tight-geometry
+      // merge as the direct route).
+      const gapAvail = firstJ.x - (anchor.x + r1);
+      const kx = Math.min(24, Math.max(4, gapAvail - 2));
+      const c2x = firstJ.x - firstDep.x * (kx / 2);
+      const c2y = firstJ.y - firstDep.y * (kx / 2);
+      entryD = gapAvail >= 6
+        ? `M ${anchor.x} ${anchor.y} L ${anchor.x} ${gapY - r1} C ${anchor.x} ${gapY - r1 + k1}, ${anchor.x + r1 - k1} ${gapY}, ${anchor.x + r1} ${gapY} L ${firstJ.x - kx} ${gapY} C ${firstJ.x - kx / 2} ${gapY}, ${c2x} ${c2y}, ${firstJ.x} ${firstJ.y}`
+        : `M ${anchor.x} ${anchor.y} L ${anchor.x} ${gapY - r1} C ${anchor.x} ${gapY - r1 + k1}, ${anchor.x + r1 - k1} ${gapY}, ${anchor.x + r1} ${gapY} C ${firstJ.x - kx / 2} ${gapY}, ${c2x} ${c2y}, ${firstJ.x} ${firstJ.y}`;
+    }
+
+    // --- Exit: leave the last junction along the contour arrival
+    // (south-east), curve south, drop to a clear band below the title,
+    // run west to the left gutter, quarter-turn south. The band sits
+    // midway between the last line's ink bottom and the next content
+    // top below the title, measured live.
+    const titleBottom = docBox(headingEl).bottom;
+    const lastInkBottom = lineInk(lastGlyph.lineIndex, false);
+    let nextTop = Number.POSITIVE_INFINITY;
+    if (config.sectionEl) {
+      for (const el of config.sectionEl.querySelectorAll("*")) {
+        if (headingEl.contains(el)) continue;
+        const b = docBox(el);
+        if (b.top > titleBottom + 2 && b.bottom - b.top > 4 && b.right - b.left > 4) {
+          nextTop = Math.min(nextTop, b.top);
+        }
+      }
+    }
+    if (!Number.isFinite(nextTop)) nextTop = titleBottom + 60;
+    const bandY = nextTop - lastInkBottom < 16
+      ? lastInkBottom + 8
+      : clamp((lastInkBottom + nextTop) / 2, lastInkBottom + 8, nextTop - 8);
+    // Final turn radius: 16 by default. For Contact the following site
+    // segment (site-5) starts its email approach at gutterEndY, so the
+    // exit must end high enough above it for the approach cubic to keep
+    // radius >= 20 (measured offline: exit end 8356 -> r 3.5, 8344 ->
+    // r 27.6 at 1440px); the radius shrinks to the 5px floor when the
+    // band sits at or below gutterEndY (a quarter-turn cubic's true min
+    // radius is 0.99x its r, so 5 keeps the measured radius >= 4).
+    const r3 = opts?.gutterEndY === undefined ? 16 : clamp(opts.gutterEndY - bandY - 18, 5, 16);
+    const r2 = 12;
+    const avail = bandY - lastJ.y;
+    // The first curve leaves along the contour arrival (south-east) and
+    // arrives heading south. Its along-arrival extent h1 sets the
+    // radius: h1=18 gives r 3.8 when the drop clamps to v1=2 on mobile
+    // (measured offline), h1=24 gives r ~4.5.
+    const h1 = 24;
+    let v1 = 12;
+    let rr2 = r2;
+    if (lastArr.y * h1 + v1 + 4 + rr2 > avail) v1 = Math.max(2, avail - lastArr.y * h1 - 4 - rr2);
+    if (lastArr.y * h1 + v1 + 4 + rr2 > avail) rr2 = Math.max(6, avail - lastArr.y * h1 - v1 - 4);
+    const e1x = lastJ.x + lastArr.x * h1;
+    const e1y = lastJ.y + lastArr.y * h1 + v1;
+    const k2 = qk * rr2;
+    const k3 = qk * r3;
+    // The second control point sits above E1 by 60% of the drop, so it
+    // stays between the junction and E1: a fixed 14px offset goes above
+    // the junction when the drop is small (mobile: the band sits close
+    // under the title, v1 clamps to 2 and the curve kinks, r 3.1).
+    const c2y = e1y - Math.max(2, (e1y - lastJ.y) * 0.6);
+    const exitD = `M ${lastJ.x} ${lastJ.y} C ${lastJ.x + lastArr.x * 10} ${lastJ.y + lastArr.y * 10}, ${e1x} ${c2y}, ${e1x} ${e1y} L ${e1x} ${bandY - rr2} C ${e1x} ${bandY - rr2 + k2}, ${e1x - rr2 + k2} ${bandY}, ${e1x - rr2} ${bandY} L ${anchor.x + r3} ${bandY} C ${anchor.x + r3 - k3} ${bandY}, ${anchor.x} ${bandY + r3 - k3}, ${anchor.x} ${bandY + r3}`;
+    const exitEnd = { x: anchor.x, y: bandY + r3 };
+
+    const mkPath = (d: string, attr: string, kind?: string) => {
+      const el = document.createElementNS(SVG_NS, "path");
+      el.setAttribute("d", d);
+      el.setAttribute(attr, "");
+      el.setAttribute("data-headline-id", config.id);
+      if (kind) el.setAttribute("data-entry-kind", kind);
+      connectorGroup.append(el);
+      return el;
+    };
+    const entryEl = mkPath(entryD, "data-headline-entry", entryKind);
+    const exitEl = mkPath(exitD, "data-headline-exit");
+    const entryLen = entryEl.getTotalLength();
+    const exitLen = exitEl.getTotalLength();
+    // Weights are a fraction of the path lengths: the entry/exit must
+    // take a real scroll span (so the user sees the thread travel in
+    // and out) without starving the contours. Calibrated against the
+    // live scale: the exp trace totals ~8700 weight over a ~240px
+    // window at 1440px, so weight 300 buys an ~8px entry span while the
+    // Bug 8 M slice stays ~9px (the Bug 8 test needs >= 2 partial
+    // states at 4px steps). A full-length weight would take a third of
+    // the window each; the 40-60 floor from the first draft would paint
+    // in ~1px of scroll.
+    const weight = (len: number) => clamp(len * 0.3, 100, 300);
+    return {
+      ...group,
+      entry: { element: entryEl, drawLength: entryLen, weight: weight(entryLen), startDistance: 0, kind: "open", layer: "glyph", startScroll: 0, endScroll: 1 },
+      exit: { element: exitEl, drawLength: exitLen, weight: weight(exitLen), startDistance: 0, kind: "open", layer: "glyph", startScroll: 0, endScroll: 1 },
+      exitEnd,
+      entryKind,
+    };
+  };
+
+  // Full headline trace: collect + build, wrap with VISIBLE entry/exit
   // travel to and from the gutter anchor, and time the whole group
   // across the Bug-1 window. The caller wires the returned segments into
-  // the site-thread chain at the anchor point.
-  const traceHeadline = (config: HeadlineTraceConfig, chain: HeadlineTraceChain, isMobile: boolean): HeadlineTraceResult => {
-    const group = collectAndBuild(config, isMobile);
-    if (!group.order.length || !group.first || !group.last) {
-      return { ...group, segments: [], window: [chain.prevEnd, chain.prevEnd] };
+  // the site-thread chain at the anchor point, and starts the following
+  // site segment at exitEnd.
+  const traceHeadline = (
+    config: HeadlineTraceConfig,
+    chain: HeadlineTraceChain,
+    isMobile: boolean,
+    premeasured?: HeadlineTraceMeasure | null,
+  ): HeadlineTraceResult => {
+    const m = premeasured ?? measureHeadlineTrace(config, chain.anchor, isMobile, { gutterEndY: chain.gutterEndY });
+    if (!m || !m.order.length || !m.first || !m.last) {
+      const group = collectAndBuild(config, isMobile);
+      return { ...group, segments: [], window: [chain.prevEnd, chain.prevEnd], exitEnd: chain.anchor };
     }
     const window = headlineTraceWindow({
       headingTop: chain.headingTop,
-      lastLineBottom: group.lastLineBottom,
+      lastLineBottom: m.lastLineBottom,
       prevEnd: chain.prevEnd,
       winHeight: chain.winHeight,
       endCap: chain.endCap,
     });
-    const distTo = (a: Junction, b: Junction) => Math.hypot(b.x - a.x, b.y - a.y);
-    const entryWeight = Math.max(group.fontSize * 0.22, distTo(chain.anchor, group.first) * 0.18);
-    const exitWeight = Math.max(group.fontSize * 0.22, distTo(group.last, chain.anchor) * 0.18);
-    const segments: Segment[] = [
-      { drawLength: 0, weight: entryWeight, startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 },
-      ...group.segments,
-      { drawLength: 0, weight: exitWeight, startDistance: 0, kind: "hidden", layer: "glyph", startScroll: 0, endScroll: 1 },
-    ];
+    const segments: Segment[] = [m.entry, ...m.segments, m.exit];
     const totalWeight = segments.reduce((sum, segment) => sum + segment.weight, 0);
     let cursor = window[0];
     segments.forEach((segment) => {
@@ -457,8 +785,8 @@ export function createHeadlineTracer(deps: HeadlineTracerDeps) {
       setTiming(segment, cursor, end);
       cursor = end;
     });
-    return { ...group, segments, window };
+    return { ...m, segments, window, exitEnd: m.exitEnd };
   };
 
-  return { collectAndBuild, traceHeadline };
+  return { collectAndBuild, traceHeadline, measureHeadlineTrace };
 }

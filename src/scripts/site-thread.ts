@@ -7,7 +7,11 @@ import { ABOUT_EXIT_JUNCTION_FRACTIONS, findExpTransition, findTransition } from
 // createConnector) moved to src/scripts/headline-trace.ts, the shared
 // helper that traces all four headlines (About, Experience, Projects,
 // Skills, Contact). site-thread.ts keeps the site chain, the stage
-// windows, and the headline window/chain wiring.
+// windows, and the headline window/chain wiring. Bug 9: every headline
+// trace now enters and leaves through VISIBLE entry/exit paths
+// (headline-trace.ts), so the trace IS the main thread - gutter ->
+// letters -> gutter - and each following site segment starts where the
+// previous trace's exit ends.
 import { createHeadlineTracer, type Segment } from "./headline-trace";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -356,6 +360,7 @@ export function initSiteThread() {
         baselineAttr: "data-heading-glyph-baseline",
         wordPart: 1,
         findTransition: findExpTransition,
+        sectionEl: document.querySelector<HTMLElement>("#experience"),
       },
       { anchor: { x: edge, y: expTop, distance: 0 }, prevEnd: s2, headingTop: expTop, winHeight },
       isMobile,
@@ -367,6 +372,23 @@ export function initSiteThread() {
       sExp = s3;
     }
     const expSegments = expTrace.segments;
+    // Round 12.1 (Bug 9): the Projects trace is measured here, before
+    // the project chain is built, so C0 can start where the trace's
+    // exit ends (the gutter point below the TANGIBLE. headline). The
+    // full traceHeadline call below reuses this measurement (it must not
+    // re-create the entry/exit paths).
+    const projConfig = {
+      id: "proj",
+      headingEl: document.querySelector<HTMLElement>("#projects-title"),
+      spanClass: ".heading__glyph",
+      keyDataset: "headingGlyphKey",
+      keyAttr: "data-proj-glyph-key",
+      contourDataset: "projGlyphContour",
+      baselineAttr: "data-heading-glyph-baseline",
+      wordPart: 1,
+      sectionEl: document.querySelector<HTMLElement>("#projects"),
+    };
+    const projMeasured = tracer.measureHeadlineTrace(projConfig, { x: edge, y: projTop, distance: 0 }, isMobile);
 
     const stmt = document.querySelector(".about__statement"), prof = document.querySelector(".about__profile");
     const gapTop = stmt ? botOf(".about__statement") : aboutTop + 400, gapBot = prof ? topOf(".about__profile") : aboutTop + 650;
@@ -462,6 +484,25 @@ export function initSiteThread() {
     const emailEl = document.querySelector(".contact__email-btn");
     const emailBox = emailEl ? docBox(emailEl) : undefined;
     const contactTargetX = emailBox ? Math.max(edge, emailBox.left - 24) : width * 0.25, contactTargetY = emailBox ? (emailBox.top + emailBox.bottom) / 2 : contactTop + 300;
+    // Round 12.1 (Bug 9): the Contact trace is measured here, before
+    // site-5 is built, so site-5 can start where the trace's exit ends
+    // (the gutter point below the YOUR PRODUCT NEEDS. headline). The
+    // gutterEndY is where site-5 starts its email approach; the exit's
+    // final turn shrinks to end high enough above it (see
+    // measureHeadlineTrace). The full traceHeadline call below reuses
+    // this measurement.
+    const contactConfig = {
+      id: "contact",
+      headingEl: document.querySelector<HTMLElement>("#contact-title"),
+      spanClass: ".heading__glyph",
+      keyDataset: "headingGlyphKey",
+      keyAttr: "data-contact-glyph-key",
+      contourDataset: "contactGlyphContour",
+      baselineAttr: "data-heading-glyph-baseline",
+      wordPart: 1,
+      sectionEl: document.querySelector<HTMLElement>("#contact"),
+    };
+    const contactMeasured = tracer.measureHeadlineTrace(contactConfig, { x: edge, y: contactTop, distance: 0 }, isMobile, { gutterEndY: contactTargetY - 75 });
 
     // Stadium crossing: quarter-turn off the gutter, straight run across,
     // quarter-turn back onto the gutter. Tangents match the vertical gutter
@@ -560,7 +601,18 @@ export function initSiteThread() {
     const approachCp2x = contactTargetX - Math.cos(contactTheta) * contactHandle;
     const approachCp2y = contactTargetY - Math.sin(contactTheta) * contactHandle;
     const gutterEndY = contactTargetY - 75;
-    const site5D = `M ${edge} ${contactTop} C ${edge} ${contactTop + (gutterEndY - contactTop) / 3}, ${edge} ${contactTop + (2 * (gutterEndY - contactTop)) / 3}, ${edge} ${gutterEndY} C ${edge} ${contactTargetY - 31}, ${approachCp2x} ${approachCp2y}, ${contactTargetX} ${contactTargetY}`;
+    // Bug 9: site-5 starts where the Contact trace's exit ends (the
+    // gutter point below the headline), not at the headline top. The
+    // exit band sits below gutterEndY (the email button is only ~50px
+    // under the title), so the vertical gutter leg is skipped and the
+    // approach cubic starts directly from the exit end; the exit's
+    // final turn shrinks to keep this cubic's radius >= 20 (see
+    // measureHeadlineTrace). When the exit ends above gutterEndY the
+    // old vertical leg is kept.
+    const c5Start = contactMeasured?.exitEnd ?? { x: edge, y: contactTop };
+    const site5D = c5Start.y <= gutterEndY
+      ? `M ${edge} ${c5Start.y} C ${edge} ${c5Start.y + (gutterEndY - c5Start.y) / 3}, ${edge} ${c5Start.y + (2 * (gutterEndY - c5Start.y)) / 3}, ${edge} ${gutterEndY} C ${edge} ${contactTargetY - 31}, ${approachCp2x} ${approachCp2y}, ${contactTargetX} ${contactTargetY}`
+      : `M ${edge} ${c5Start.y} C ${edge} ${contactTargetY - 31}, ${approachCp2x} ${approachCp2y}, ${contactTargetX} ${contactTargetY}`;
 
     // Site-2 career timeline (round 12, point 3): the thread leaves the
     // left gutter below the "Career Milestones" title, ramps onto the
@@ -601,7 +653,12 @@ export function initSiteThread() {
       // long entry's title clearance drops to ~6.5 at dx=17, and the
       // short entry's radius drops to ~5 at dx=35.
       const dx = mx - edge;
-      const yB = dx <= 22 ? titleBottom + 6 : titleTop - 7;
+      // Bug 9: the run starts where the Experience trace's exit ends
+      // (the gutter point below the headline), not at the headline top.
+      // The ramp start yB is below that point in practice; guard the
+      // monotone gutter run if a layout ever puts it above.
+      const yB0 = dx <= 22 ? titleBottom + 6 : titleTop - 7;
+      const yB = Math.max(yB0, expTrace.exitEnd.y + 20);
       let exitD: string;
       if (width <= 1024) {
         // Single column (sidebar on top): exit in the gap between the
@@ -616,9 +673,9 @@ export function initSiteThread() {
         const yD = projTop - 20;
         exitD = `L ${mx} ${yC} ${rampV(mx, yC, edge, yD)} L ${edge} ${projTop}`;
       }
-      site2D = `M ${edge} ${expTop} L ${edge} ${yB} ${rampV(edge, yB, mx, m1.y)} L ${mx} ${m2.y} ${exitD}`;
+      site2D = `M ${expTrace.exitEnd.x} ${expTrace.exitEnd.y} L ${edge} ${yB} ${rampV(edge, yB, mx, m1.y)} L ${mx} ${m2.y} ${exitD}`;
     } else {
-      site2D = `M ${edge} ${expTop} C ${edge} ${expTop + (projTop - expTop) * 0.3}, ${edge} ${expTop + (projTop - expTop) * 0.7}, ${edge} ${projTop}`;
+      site2D = `M ${expTrace.exitEnd.x} ${expTrace.exitEnd.y} C ${edge} ${expTrace.exitEnd.y + (projTop - expTrace.exitEnd.y) * 0.3}, ${edge} ${expTrace.exitEnd.y + (projTop - expTrace.exitEnd.y) * 0.7}, ${edge} ${projTop}`;
     }
 
     // --- Round 12 project chain -----------------------------------------
@@ -767,15 +824,18 @@ export function initSiteThread() {
       const e2eeContent = contentBoxOf("fb-messenger-e2ee");
       const pianoContent = contentBoxOf("sky-auto-piano");
 
-      // C0: left gutter down to the E2EE entry.
-      const c0 = makeRoute(edge, projTop, "S");
+      // C0: left gutter down to the E2EE entry. Bug 9: starts where the
+      // Projects trace's exit ends (the gutter point below the headline),
+      // not at the headline top.
+      const projStart = projMeasured?.exitEnd ?? { x: edge, y: projTop };
+      const c0 = makeRoute(projStart.x, projStart.y, "S");
       if (e2eeStage.entryDir === "E") {
-        const r0 = Math.min(60, Math.max(4, e2eeStage.entry.x - edge));
+        const r0 = Math.min(60, Math.max(4, e2eeStage.entry.x - edge), Math.max(4, e2eeStage.entry.y - projStart.y - 8));
         c0.lineTo(edge, e2eeStage.entry.y - r0);
         c0.turn("E", r0);
         c0.lineTo(e2eeStage.entry.x, e2eeStage.entry.y);
       } else {
-        const rr = Math.min(16, Math.max(6, (e2eeStage.entry.x - edge) / 3));
+        const rr = Math.min(16, Math.max(6, (e2eeStage.entry.x - edge) / 3), Math.max(6, (e2eeStage.entry.y - projStart.y - 8) / 2));
         c0.lineTo(edge, e2eeStage.entry.y - 2 * rr);
         c0.turn("E", rr);
         c0.lineTo(e2eeStage.entry.x - rr, e2eeStage.entry.y - rr);
@@ -853,6 +913,25 @@ export function initSiteThread() {
       });
     }
 
+    // Round 12.1 (Bug 9): the Skills trace is measured here, before
+    // site-4 is built, so site-4 can start where the trace's exit ends
+    // (the gutter point below the USED WITH INTENT. headline). The full
+    // traceHeadline call below reuses this measurement.
+    const skillsConfig = {
+      id: "skills",
+      headingEl: document.querySelector<HTMLElement>("#skills-title"),
+      spanClass: ".heading__glyph",
+      keyDataset: "headingGlyphKey",
+      keyAttr: "data-skills-glyph-key",
+      contourDataset: "skillsGlyphContour",
+      baselineAttr: "data-heading-glyph-baseline",
+      wordPart: 1,
+      sectionEl: document.querySelector<HTMLElement>("#skills"),
+    };
+    const skillsMeasured = tracer.measureHeadlineTrace(skillsConfig, { x: edge, y: skillsTop, distance: 0 }, isMobile);
+    const skillsStart = skillsMeasured?.exitEnd ?? { x: edge, y: skillsTop };
+    const projStart2 = projMeasured?.exitEnd ?? { x: edge, y: projTop };
+
     const pathData = [
       `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`,
       site1D,
@@ -861,9 +940,10 @@ export function initSiteThread() {
       // the E2EE stage entry); the rest of the project chain (C1, stage
       // paths, C2, C3) is built as segments below. Fallback is the old
       // Projects gutter run, kept so the thread never breaks if a stage
-      // is missing.
-      chain ? chain.c0d : `M ${edge} ${projTop} C ${edge} ${p1Bot - 40}, ${edge} ${p1Bot - 10}, ${edge} ${p1Bot} ${stadium(edge, p1Bot, rightEdge, p2Top)} C ${rightEdge} ${p2Bot - 40}, ${rightEdge} ${p2Bot - 10}, ${rightEdge} ${p2Bot} ${stadium(rightEdge, p2Bot, edge, p3Top)} C ${edge} ${skillsTop - 40}, ${edge} ${skillsTop - 10}, ${edge} ${skillsTop}`,
-      `M ${edge} ${skillsTop} C ${edge} ${skillsTop + (contactTop - skillsTop) * 0.3}, ${edge} ${skillsTop + (contactTop - skillsTop) * 0.7}, ${edge} ${contactTop}`,
+      // is missing. Bug 9: both start where the Projects trace's exit
+      // ends, not at the headline top.
+      chain ? chain.c0d : `M ${projStart2.x} ${projStart2.y} C ${edge} ${p1Bot - 40}, ${edge} ${p1Bot - 10}, ${edge} ${p1Bot} ${stadium(edge, p1Bot, rightEdge, p2Top)} C ${rightEdge} ${p2Bot - 40}, ${rightEdge} ${p2Bot - 10}, ${rightEdge} ${p2Bot} ${stadium(rightEdge, p2Bot, edge, p3Top)} C ${edge} ${skillsTop - 40}, ${edge} ${skillsTop - 10}, ${edge} ${skillsTop}`,
+      `M ${skillsStart.x} ${skillsStart.y} C ${edge} ${skillsStart.y + (contactTop - skillsStart.y) * 0.3}, ${edge} ${skillsStart.y + (contactTop - skillsStart.y) * 0.7}, ${edge} ${contactTop}`,
       site5D,
       connectorD,
     ];
@@ -900,18 +980,10 @@ export function initSiteThread() {
     const s4 = Math.max(sExp + 60, Math.round(projTop - winHeight * 0.55));
     const s5 = Math.max(s4 + 60, Math.round(skillsTop - winHeight * 0.55));
     const projTrace = tracer.traceHeadline(
-      {
-        id: "proj",
-        headingEl: document.querySelector<HTMLElement>("#projects-title"),
-        spanClass: ".heading__glyph",
-        keyDataset: "headingGlyphKey",
-        keyAttr: "data-proj-glyph-key",
-        contourDataset: "projGlyphContour",
-        baselineAttr: "data-heading-glyph-baseline",
-        wordPart: 1,
-      },
+      projConfig,
       { anchor: { x: edge, y: projTop, distance: 0 }, prevEnd: sExp, headingTop: projTop, winHeight, endCap: chain ? chain.stages[0]!.artStart - 60 : undefined },
       isMobile,
+      projMeasured,
     );
     const projSegments = projTrace.segments;
     const sProjStart = projTrace.window[0];
@@ -1002,35 +1074,19 @@ export function initSiteThread() {
     // ends gracefully at the footer: site-5 runs from the end of the
     // Contact trace to the email link, where the head dot parks.
     const skillsTrace = tracer.traceHeadline(
-      {
-        id: "skills",
-        headingEl: document.querySelector<HTMLElement>("#skills-title"),
-        spanClass: ".heading__glyph",
-        keyDataset: "headingGlyphKey",
-        keyAttr: "data-skills-glyph-key",
-        contourDataset: "skillsGlyphContour",
-        baselineAttr: "data-heading-glyph-baseline",
-        wordPart: 1,
-      },
+      skillsConfig,
       { anchor: { x: edge, y: skillsTop, distance: 0 }, prevEnd: chain ? chainEnd : sProjEnd, headingTop: skillsTop, winHeight },
       isMobile,
+      skillsMeasured,
     );
     const skillsSegments = skillsTrace.segments;
     const sSkillsStart = skillsTrace.window[0];
     const sSkillsEnd = skillsTrace.window[1];
     const contactTrace = tracer.traceHeadline(
-      {
-        id: "contact",
-        headingEl: document.querySelector<HTMLElement>("#contact-title"),
-        spanClass: ".heading__glyph",
-        keyDataset: "headingGlyphKey",
-        keyAttr: "data-contact-glyph-key",
-        contourDataset: "contactGlyphContour",
-        baselineAttr: "data-heading-glyph-baseline",
-        wordPart: 1,
-      },
-      { anchor: { x: edge, y: contactTop, distance: 0 }, prevEnd: sSkillsEnd, headingTop: contactTop, winHeight },
+      contactConfig,
+      { anchor: { x: edge, y: contactTop, distance: 0 }, prevEnd: sSkillsEnd, headingTop: contactTop, winHeight, gutterEndY: contactTargetY - 75 },
       isMobile,
+      contactMeasured,
     );
     const contactSegments = contactTrace.segments;
     const sContactStart = contactTrace.window[0];

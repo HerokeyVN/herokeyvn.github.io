@@ -3248,3 +3248,435 @@ test("bug 8: Experience headline fits on mobile", async ({ page }) => {
   expect(mobile.minGlyphLeft, "leftmost Experience glyph at 390px").toBeGreaterThanOrEqual(-1);
   expect(mobile.lineTopDiff, "MEETS and INFRASTRUCTURE. share one line at 390px").toBeLessThanOrEqual(4);
 });
+
+test("bug 9: main thread visibly enters and leaves every traced headline", async ({ page }) => {
+  // 240s: the sweep is inherently long (4 headlines x 2 viewports at
+  // 3px steps) and parallel workers in the full suite push it past 180s.
+  test.setTimeout(240000);
+  // Guards the Bug 9 fix: the headline traces used to be wrapped in
+  // hidden entry/exit segments (no element, drawLength 0), so the main
+  // thread vanished in the gutter while the letters drew red via a
+  // separate glyph overlay with a separate head dot - the user saw the
+  // letters turn red but never saw the thread run into them. The fix
+  // makes the entry/exit VISIBLE paths (data-headline-entry /
+  // data-headline-exit): gutter down, into the first junction (direct,
+  // or via the inter-line gap when filled text precedes the traced word
+  // on its line), and out of the last junction's rightmost point down
+  // to a clear band below the title, across to the gutter, and south
+  // again - and the next site segment starts where the exit ends. One
+  // thread, one dot, gutter -> letters -> gutter.
+  const viewports = [
+    { width: 1920, height: 925 },
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 },
+  ] as const;
+  const sweepViewports = new Set([1440, 390]);
+  for (const vp of viewports) {
+    const tag = `${vp.width}x${vp.height}`;
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")].reduce(
+        (t, p) => t + p.getTotalLength(),
+        0,
+      ) > 1000,
+    );
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = "auto";
+    });
+
+    const geo = await page.evaluate(() => {
+      const nums = (d: string) => (d.match(/-?\d*\.?\d+/g) ?? []).map(Number);
+      const cmds = (d: string) => {
+        const out: { cmd: string; pts: number[] }[] = [];
+        for (const part of d.split(/(?=[MLC])/)) {
+          const m = part.match(/^([MLC])\s*(.*)$/s);
+          if (m) out.push({ cmd: m[1]!, pts: nums(m[2]!) });
+        }
+        return out;
+      };
+      const firstPt = (d: string) => { const c = cmds(d)[0]!; return { x: c.pts[0]!, y: c.pts[1]! }; };
+      const lastPt = (d: string) => {
+        const cs = cmds(d);
+        const last = cs[cs.length - 1]!;
+        return { x: last.pts[last.pts.length - 2]!, y: last.pts[last.pts.length - 1]! };
+      };
+      const startTan = (d: string) => {
+        const cs = cmds(d);
+        const m = cs[0]!, n = cs[1]!;
+        if (n.cmd === "L") return { x: n.pts[0]! - m.pts[0]!, y: n.pts[1]! - m.pts[1]! };
+        return { x: n.pts[0]! - m.pts[0]!, y: n.pts[1]! - m.pts[1]! };
+      };
+      const endTan = (d: string) => {
+        const cs = cmds(d);
+        const last = cs[cs.length - 1]!;
+        const prev = cs.length >= 2 ? cs[cs.length - 2]! : cs[0]!;
+        const px = prev.pts[prev.pts.length - 2]!, py = prev.pts[prev.pts.length - 1]!;
+        const ex = last.pts[last.pts.length - 2]!, ey = last.pts[last.pts.length - 1]!;
+        if (last.cmd === "C") return { x: ex - last.pts[2]!, y: ey - last.pts[3]! };
+        return { x: ex - px, y: ey - py };
+      };
+      const angleDeg = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+        const la = Math.hypot(a.x, a.y), lb = Math.hypot(b.x, b.y);
+        if (la < 1e-6 || lb < 1e-6) return 0;
+        return (Math.acos(Math.max(-1, Math.min(1, (a.x * b.x + a.y * b.y) / (la * lb)))) * 180) / Math.PI;
+      };
+      const maxCurv = (c: { from: { x: number; y: number }; c1: { x: number; y: number }; c2: { x: number; y: number }; p: { x: number; y: number } }) => {
+        let max = 0;
+        for (let k = 0; k <= 40; k++) {
+          const t = k / 40, mt = 1 - t;
+          const dx = 3 * mt * mt * (c.c1.x - c.from.x) + 6 * mt * t * (c.c2.x - c.c1.x) + 3 * t * t * (c.p.x - c.c2.x);
+          const dy = 3 * mt * mt * (c.c1.y - c.from.y) + 6 * mt * t * (c.c2.y - c.c1.y) + 3 * t * t * (c.p.y - c.c2.y);
+          const ddx = 6 * mt * (c.c2.x - 2 * c.c1.x + c.from.x) + 6 * t * (c.p.x - 2 * c.c2.x + c.c1.x);
+          const ddy = 6 * mt * (c.c2.y - 2 * c.c1.y + c.from.y) + 6 * t * (c.p.y - 2 * c.c2.y + c.c1.y);
+          const sp = Math.hypot(dx, dy);
+          if (sp < 1e-6) continue;
+          max = Math.max(max, Math.abs(dx * ddy - dy * ddx) / (sp * sp * sp));
+        }
+        return max;
+      };
+      // Joints inside one path plus its min cubic radius.
+      const pathQuality = (d: string) => {
+        const cs = cmds(d);
+        let maxJoint = 0;
+        let minR = Number.POSITIVE_INFINITY;
+        const tanOf = (c: { cmd: string; pts: number[] }, atStart: boolean, prevEnd: { x: number; y: number }) => {
+          if (c.cmd === "L") return { x: c.pts[0]! - prevEnd.x, y: c.pts[1]! - prevEnd.y };
+          if (atStart) return { x: c.pts[0]! - prevEnd.x, y: c.pts[1]! - prevEnd.y };
+          return { x: c.pts[4]! - c.pts[2]!, y: c.pts[5]! - c.pts[3]! };
+        };
+        let cur = { x: cs[0]!.pts[0]!, y: cs[0]!.pts[1]! };
+        for (let i = 1; i < cs.length; i++) {
+          const c = cs[i]!;
+          const prevEnd = cur;
+          const start = tanOf(c, true, prevEnd);
+          if (i > 1) {
+            const prev = cs[i - 1]!;
+            const prevEndTan = tanOf(prev, false, i >= 3 ? { x: cs[i - 2]!.pts[cs[i - 2]!.pts.length - 2]!, y: cs[i - 2]!.pts[cs[i - 2]!.pts.length - 1]! } : { x: cs[0]!.pts[0]!, y: cs[0]!.pts[1]! });
+            maxJoint = Math.max(maxJoint, angleDeg(prevEndTan, start));
+          }
+          if (c.cmd === "C") {
+            const k = maxCurv({ from: prevEnd, c1: { x: c.pts[0]!, y: c.pts[1]! }, c2: { x: c.pts[2]!, y: c.pts[3]! }, p: { x: c.pts[4]!, y: c.pts[5]! } });
+            if (k > 0) minR = Math.min(minR, 1 / k);
+          }
+          cur = { x: c.pts[c.pts.length - 2]!, y: c.pts[c.pts.length - 1]! };
+        }
+        return { maxJoint, minR: Number.isFinite(minR) ? minR : 999 };
+      };
+      const siteSvg = document.querySelector<SVGSVGElement>("[data-site-thread]")!;
+      const siteSegs = [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")];
+      const c3 = document.querySelector<SVGPathElement>('[data-project-connector="c3"]');
+      const heads = ["exp", "proj", "skills", "contact"] as const;
+      const sections: Record<string, string> = { exp: "#experience", proj: "#projects", skills: "#skills", contact: "#contact" };
+      const perHead: Record<string, Record<string, unknown>> = {};
+      for (const id of heads) {
+        const entry = document.querySelector<SVGPathElement>(`[data-headline-entry][data-headline-id='${id}']`)!;
+        const exit = document.querySelector<SVGPathElement>(`[data-headline-exit][data-headline-id='${id}']`)!;
+        const titleIds: Record<string, string> = { exp: "experience-title", proj: "projects-title", skills: "skills-title", contact: "contact-title" };
+        const title = document.querySelector<HTMLElement>(`#${titleIds[id]!}`)!;
+        const contourSel = `[data-${id}-glyph-key][data-${id}-glyph-contour='0']`;
+        const contours = [...document.querySelectorAll<SVGPathElement>(contourSel)];
+        const firstPath = contours[0]!;
+        const lastPath = contours[contours.length - 1]!;
+        const toSite = (path: SVGPathElement, s: number) => {
+          const pt = path.getPointAtLength(s);
+          const pm = path.getScreenCTM();
+          const sm = siteSvg.getScreenCTM();
+          if (!pm || !sm) return null;
+          const q = new DOMPoint(pt.x, pt.y).matrixTransform(pm).matrixTransform(sm.inverse());
+          return { x: q.x, y: q.y };
+        };
+        // Re-derive the designed junctions the way findJunction does:
+        // first = topmost (leftmost for contact's Y, whose TOP
+        // departure is diagonal), last = rightmost point of ".".
+        const junction = (path: SVGPathElement, mode: "top" | "left" | "right") => {
+          const len = path.getTotalLength();
+          let best = { x: 0, y: 0, v: mode === "right" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY };
+          for (let s = 0; s <= len; s += len / 240) {
+            const p = toSite(path, s);
+            if (!p) continue;
+            const v = mode === "top" ? p.y : p.x;
+            if ((mode === "top" && v < best.v) || (mode === "left" && v < best.v) || (mode === "right" && v > best.v)) {
+              best = { x: p.x, y: p.y, v };
+            }
+          }
+          return { x: best.x, y: best.y };
+        };
+        const firstJ = junction(firstPath, id === "contact" ? "left" : "top");
+        const lastJ = junction(lastPath, "right");
+        const entryEndPt = lastPt(entry.getAttribute("d")!);
+        const exitStartPt = firstPt(exit.getAttribute("d")!);
+        // Contour tangents at the entry/exit endpoints, as one-sided
+        // 12-unit chords exactly like production's contourTangentAt
+        // (departure: s* -> s*+12; arrival: s*-12 -> s*, where s* is
+        // the sample nearest the endpoint). A centred chord is wrong
+        // here: the "." contour turns ~67deg across its rightmost
+        // point, so a chord spanning the junction mixes the arrival
+        // (south-east, 23deg) with the departure (straight down).
+        const contourTanAt = (path: SVGPathElement, pt: { x: number; y: number }, forward: boolean) => {
+          const len = path.getTotalLength();
+          let bestS = 0, bestD = Number.POSITIVE_INFINITY;
+          for (let s = 0; s <= len; s += len / 480) {
+            const q = toSite(path, s);
+            if (!q) continue;
+            const d = Math.hypot(q.x - pt.x, q.y - pt.y);
+            if (d < bestD) { bestD = d; bestS = s; }
+          }
+          const eps = Math.min(12, len / 4);
+          const a = toSite(path, forward ? bestS : (bestS - eps + len) % len)!;
+          const b = toSite(path, forward ? (bestS + eps) % len : bestS)!;
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const l = Math.hypot(dx, dy);
+          return l > 0 ? { x: dx / l, y: dy / l } : { x: 1, y: 0 };
+        };
+        const firstDep = contourTanAt(firstPath, entryEndPt, true);
+        const lastArr = contourTanAt(lastPath, exitStartPt, false);
+        // Distance from a point to a contour (min over dense samples).
+        // Used for the entry/exit endpoints: the production junction is
+        // sampled at 120 steps in local coordinates (findJunction), so
+        // re-deriving the extremum in the test can land ~2.5px away
+        // along a flat glyph top - the point is still exactly on the
+        // contour, which is what the joint needs. Squared distances in
+        // the hot loop (Math.hypot is slow at this volume).
+        const distToContour = (path: SVGPathElement, pt: { x: number; y: number }) => {
+          const len = path.getTotalLength();
+          let minSq = Number.POSITIVE_INFINITY;
+          for (let s = 0; s <= len; s += len / 480) {
+            const q = toSite(path, s);
+            if (!q) continue;
+            const dx = q.x - pt.x, dy = q.y - pt.y;
+            minSq = Math.min(minSq, dx * dx + dy * dy);
+          }
+          return Math.sqrt(minSq);
+        };
+        const prevD = id === "exp" ? siteSegs[1]!.getAttribute("d")!
+          : id === "proj" ? siteSegs[2]!.getAttribute("d")!
+          : id === "skills" ? (c3?.getAttribute("d") ?? siteSegs[3]!.getAttribute("d")!)
+          : siteSegs[4]!.getAttribute("d")!;
+        const nextD = id === "exp" ? siteSegs[2]!.getAttribute("d")!
+          : id === "proj" ? siteSegs[3]!.getAttribute("d")!
+          : id === "skills" ? siteSegs[4]!.getAttribute("d")!
+          : siteSegs[5]!.getAttribute("d")!;
+        // Clearance: entry/exit samples vs every contour sample, in
+        // site space, excluding 24px around the designed junctions.
+        const contourSamples: { x: number; y: number }[] = [];
+        for (const p of contours) {
+          const len = p.getTotalLength();
+          for (let s = 0; s <= len; s += Math.max(3, len / 200)) {
+            const q = toSite(p, s);
+            if (q) contourSamples.push(q);
+          }
+        }
+        const clearance = (el: SVGPathElement, nearJ: { x: number; y: number }) => {
+          const len = el.getTotalLength();
+          let minSq = Number.POSITIVE_INFINITY;
+          for (let s = 0; s <= len; s += 4) {
+            const pt = el.getPointAtLength(s);
+            const jdx = pt.x - nearJ.x, jdy = pt.y - nearJ.y;
+            if (jdx * jdx + jdy * jdy < 24 * 24) continue;
+            for (const c of contourSamples) {
+              const dx = pt.x - c.x, dy = pt.y - c.y;
+              const dSq = dx * dx + dy * dy;
+              if (dSq < minSq) {
+                minSq = dSq;
+                if (minSq < 9) return Math.sqrt(minSq);
+              }
+            }
+          }
+          return Math.sqrt(minSq);
+        };
+        // Gap-run slot (gap entries only): the run's y is the end y of
+        // the entry's first cubic; the slot sits between the line-above
+        // ink bottom (canvas descent of that line's text) and the
+        // traced line's ink top.
+        let gap: { gapY: number; inkBottom: number; firstInkTop: number } | null = null;
+        if (entry.getAttribute("data-entry-kind") === "gap") {
+          const entryCmds = cmds(entry.getAttribute("d")!);
+          const gapY = entryCmds[2]!.pts[5]!;
+          const firstLineTop = firstPath.getBoundingClientRect().top;
+          const lineHeight = Number.parseFloat(getComputedStyle(title).lineHeight);
+          const textNode = [...title.childNodes].find((n) => n.nodeType === 3 && (n.textContent ?? "").trim().length > 0) as Text;
+          let lineAbove = "";
+          if (textNode) {
+            for (let i = 0; i < textNode.length; i++) {
+              const r = document.createRange();
+              r.setStart(textNode, i);
+              r.setEnd(textNode, i + 1);
+              const rect = r.getClientRects()[0];
+              if (rect && Math.abs(rect.top - (firstLineTop - lineHeight)) <= 4) lineAbove += textNode.textContent![i];
+            }
+          }
+          const wordIndex = Number(firstPath.getAttribute(`data-${id}-glyph-key`)!.split("-")[1]);
+          const wordBaseline = title.querySelector<HTMLElement>(`[data-heading-glyph-baseline='${wordIndex}']`)!;
+          const lineAboveBaseline = wordBaseline.getBoundingClientRect().top + scrollY - lineHeight;
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d")!;
+          ctx.font = getComputedStyle(title).font;
+          const descent = lineAbove ? ctx.measureText(lineAbove).actualBoundingBoxDescent : 0;
+          const inkBottom = lineAboveBaseline + descent;
+          let firstInkTop = Number.POSITIVE_INFINITY;
+          for (const p of contours) {
+            if (Math.abs(p.getBoundingClientRect().top - firstLineTop) > 4) continue;
+            const len = p.getTotalLength();
+            for (let s = 0; s <= len; s += Math.max(3, len / 120)) {
+              const q = toSite(p, s);
+              if (q) firstInkTop = Math.min(firstInkTop, q.y);
+            }
+          }
+          gap = { gapY, inkBottom, firstInkTop };
+        }
+        const entryStyle = getComputedStyle(entry);
+        const exitStyle = getComputedStyle(exit);
+        const contourStyle = getComputedStyle(firstPath);
+        const firstGlyphSpan = title.querySelector<HTMLElement>(".heading__glyph")!;
+        perHead[id] = {
+          entryKind: entry.getAttribute("data-entry-kind"),
+          firstDepX: firstDep.x,
+          firstDepY: firstDep.y,
+          firstGlyphLeft: firstGlyphSpan.getBoundingClientRect().left,
+          titleLeft: title.getBoundingClientRect().left,
+          entryD: entry.getAttribute("d"),
+          exitD: exit.getAttribute("d"),
+          entryStroke: entryStyle.stroke,
+          entryWidth: Number.parseFloat(entryStyle.strokeWidth),
+          exitStroke: exitStyle.stroke,
+          exitWidth: Number.parseFloat(exitStyle.strokeWidth),
+          contourWidth: Number.parseFloat(contourStyle.strokeWidth),
+          entryEndOnContour: distToContour(firstPath, entryEndPt),
+          exitStartOnContour: distToContour(lastPath, exitStartPt),
+          entryStart: firstPt(entry.getAttribute("d")!),
+          entryEnd: lastPt(entry.getAttribute("d")!),
+          exitStart: firstPt(exit.getAttribute("d")!),
+          exitEnd: lastPt(exit.getAttribute("d")!),
+          prevEnd: lastPt(prevD),
+          nextStart: firstPt(nextD),
+          firstJ,
+          lastJ,
+          entryStartJoint: angleDeg(startTan(entry.getAttribute("d")!), endTan(prevD)),
+          entryEndJoint: angleDeg(endTan(entry.getAttribute("d")!), firstDep),
+          exitStartJoint: angleDeg(startTan(exit.getAttribute("d")!), lastArr),
+          exitEndJoint: angleDeg(endTan(exit.getAttribute("d")!), startTan(nextD)),
+          entryQuality: pathQuality(entry.getAttribute("d")!),
+          exitQuality: pathQuality(exit.getAttribute("d")!),
+          entryClearance: clearance(entry, firstJ),
+          exitClearance: clearance(exit, lastJ),
+          gap,
+          sectionTop: document.querySelector<HTMLElement>(sections[id]!)!.getBoundingClientRect().top + scrollY,
+        };
+      }
+      return perHead;
+    });
+
+    const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+    for (const id of ["exp", "proj", "skills", "contact"] as const) {
+      const g = geo[id] as Record<string, any>;
+      // The route follows the live layout, not a hardcoded table: the
+      // entry runs direct when the traced word starts its line (the
+      // first glyph span sits at the title's left edge) and its contour
+      // departs east; otherwise it takes the inter-line gap. At 1920
+      // exp MEETS starts its line (direct) while at 1440 it follows
+      // IDENTITY on the same line (gap) - the layout decides.
+      const firstOnLine = g.firstGlyphLeft - g.titleLeft <= 12;
+      const eastDep = Math.abs(g.firstDepX) > 0.9 && Math.abs(g.firstDepY) < 0.15;
+      const expectedKind = firstOnLine && eastDep ? "direct" : "gap";
+      expect(g.entryKind, `${id} entry route at ${tag} (firstOnLine=${firstOnLine}, eastDep=${eastDep})`).toBe(expectedKind);
+      expect(g.entryStroke, `${id} entry stroke at ${tag}`).toBe("rgb(255, 60, 26)");
+      expect(g.exitStroke, `${id} exit stroke at ${tag}`).toBe("rgb(255, 60, 26)");
+      expect(Math.abs(g.entryWidth - g.contourWidth), `${id} entry stroke width matches the contours at ${tag}`).toBeLessThanOrEqual(0.05);
+      expect(Math.abs(g.exitWidth - g.contourWidth), `${id} exit stroke width matches the contours at ${tag}`).toBeLessThanOrEqual(0.05);
+      expect(dist(g.entryStart, g.prevEnd), `${id} entry starts where the previous site segment ends at ${tag}`).toBeLessThanOrEqual(1);
+      expect(g.entryEndOnContour, `${id} entry ends on the first glyph contour at ${tag}`).toBeLessThanOrEqual(1);
+      expect(g.exitStartOnContour, `${id} exit starts on the last glyph contour at ${tag}`).toBeLessThanOrEqual(1);
+      expect(dist(g.exitEnd, g.nextStart), `${id} exit ends where the next site segment starts at ${tag}`).toBeLessThanOrEqual(1);
+      expect(g.entryStartJoint, `${id} entry start joint at ${tag}`).toBeLessThanOrEqual(2);
+      expect(g.entryEndJoint, `${id} entry end joint at ${tag}`).toBeLessThanOrEqual(2);
+      expect(g.exitStartJoint, `${id} exit start joint at ${tag}`).toBeLessThanOrEqual(2);
+      expect(g.exitEndJoint, `${id} exit end joint at ${tag}`).toBeLessThanOrEqual(2);
+      expect(g.entryQuality.maxJoint, `${id} entry internal joints at ${tag}`).toBeLessThanOrEqual(2);
+      expect(g.exitQuality.maxJoint, `${id} exit internal joints at ${tag}`).toBeLessThanOrEqual(2);
+      expect(g.entryQuality.minR, `${id} entry min radius at ${tag}`).toBeGreaterThanOrEqual(4);
+      expect(g.exitQuality.minR, `${id} exit min radius at ${tag}`).toBeGreaterThanOrEqual(4);
+      expect(g.entryClearance, `${id} entry clearance from the glyph contours at ${tag}`).toBeGreaterThanOrEqual(3);
+      expect(g.exitClearance, `${id} exit clearance from the glyph contours at ${tag}`).toBeGreaterThanOrEqual(3);
+      if (g.gap) {
+        expect(g.gap.gapY - g.gap.inkBottom, `${id} gap run clears the line-above ink at ${tag}`).toBeGreaterThanOrEqual(3);
+        expect(g.gap.firstInkTop - g.gap.gapY, `${id} gap run clears the traced line ink at ${tag}`).toBeGreaterThanOrEqual(3);
+      }
+    }
+
+    // Draw spans + head dot: the entry/exit must paint over real scroll
+    // spans (not flip in 1px), and the glyph dot must ride the leading
+    // edge while they draw. Swept at 3px steps over the trace window
+    // (the entry starts the window, the exit ends it); an ~8px span
+    // always shows >= 2 partial samples on a 3px grid.
+    if (sweepViewports.has(vp.width)) {
+      for (const id of ["exp", "proj", "skills", "contact"] as const) {
+        const g = geo[id] as Record<string, any>;
+        const y0 = Math.max(0, Math.floor(g.sectionTop - vp.height * 0.55));
+        let entryFirst = -1, entryLast = -1, exitFirst = -1, exitLast = -1;
+        let entryDot: { dist: number; opacity: number } | null = null;
+        let exitDot: { dist: number; opacity: number } | null = null;
+        for (let y = y0; y <= y0 + 800; y += 3) {
+          // One round-trip per step: scroll, wait for the scrub to apply
+          // (two rAFs: ScrollTrigger applies the scroll on the next
+          // frame), then read the dashes. A separate scroll evaluate +
+          // waitForTimeout + read evaluate costs ~75ms/step under load
+          // and the test exceeded 180s in the full suite (parallel
+          // workers) even though it takes 2.2m alone.
+          const read = await page.evaluate(async ({ id: hid, y: yy }) => {
+            // behavior: "instant" is required: the site CSS sets
+            // scroll-behavior: smooth on html, and something in the page
+            // (the 1200ms ScrollTrigger.refresh) resets the inline
+            // scrollBehavior = "auto" the test sets after goto back to
+            // "smooth" before the sweep runs. With smooth scrolling each
+            // scrollTo restarts the animation and the real scrollY lags
+            // the target by 1000px+, so the entry is never seen drawing.
+            window.scrollTo({ top: yy, behavior: "instant" });
+            await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 5))));
+            const fracOf = (el: SVGPathElement) => {
+              const len = el.getTotalLength();
+              const dash = el.style.strokeDasharray;
+              if (dash === "none") return 1;
+              if (!dash || dash.startsWith("0 ")) return 0;
+              return Number.parseFloat(dash.split(" ")[0]!) / len;
+            };
+            const dotAt = (el: SVGPathElement, frac: number) => {
+              const pt = el.getPointAtLength(frac * el.getTotalLength());
+              const dotEl = document.querySelector<SVGCircleElement>("[data-glyph-thread-end]")!;
+              return {
+                dist: Math.hypot(Number(dotEl.getAttribute("cx")) - pt.x, Number(dotEl.getAttribute("cy")) - pt.y),
+                opacity: Number.parseFloat(getComputedStyle(dotEl).opacity),
+              };
+            };
+            const entry = document.querySelector<SVGPathElement>(`[data-headline-entry][data-headline-id='${hid}']`)!;
+            const exit = document.querySelector<SVGPathElement>(`[data-headline-exit][data-headline-id='${hid}']`)!;
+            const ef = fracOf(entry);
+            const xf = fracOf(exit);
+            return {
+              ef, xf,
+              entryDot: ef >= 0.3 && ef <= 0.7 ? dotAt(entry, ef) : null,
+              exitDot: xf >= 0.3 && xf <= 0.7 ? dotAt(exit, xf) : null,
+            };
+          }, { id, y });
+          if (read.ef > 0 && entryFirst < 0) entryFirst = y;
+          if (read.ef > 0 && read.ef < 1) entryLast = y;
+          if (read.xf > 0 && exitFirst < 0) exitFirst = y;
+          if (read.xf > 0 && read.xf < 1) exitLast = y;
+          if (!entryDot && read.entryDot) entryDot = read.entryDot;
+          if (!exitDot && read.exitDot) exitDot = read.exitDot;
+          if (entryFirst >= 0 && exitFirst >= 0 && read.xf >= 1) break;
+        }
+        expect(entryLast - entryFirst, `${id} entry draw span at ${tag}`).toBeGreaterThanOrEqual(2);
+        expect(exitLast - exitFirst, `${id} exit draw span at ${tag}`).toBeGreaterThanOrEqual(2);
+        expect(entryDot, `${id} head dot captured mid-entry at ${tag}`).not.toBeNull();
+        expect(entryDot!.opacity, `${id} head dot visible mid-entry at ${tag}`).toBeGreaterThan(0.9);
+        expect(entryDot!.dist, `${id} head dot distance from the entry leading edge at ${tag}`).toBeLessThanOrEqual(6);
+        expect(exitDot, `${id} head dot captured mid-exit at ${tag}`).not.toBeNull();
+        expect(exitDot!.opacity, `${id} head dot visible mid-exit at ${tag}`).toBeGreaterThan(0.9);
+        expect(exitDot!.dist, `${id} head dot distance from the exit leading edge at ${tag}`).toBeLessThanOrEqual(6);
+      }
+    }
+  }
+});
