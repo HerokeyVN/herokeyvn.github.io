@@ -738,6 +738,12 @@ export function initSiteThread() {
       entry: { x: number; y: number }; exit: { x: number; y: number };
       entryDir: "E" | "S"; exitDir: "E" | "S";
       artStart: number; artEnd: number;
+      // Round 12.2 (spec 378): the scroll span the stage thread tiles.
+      // Normally the full article trigger window [artStart, artEnd], so
+      // thread and DOM share one progress value; a later stage's
+      // threadStart moves later to fund its entry connector's scroll
+      // span (see the chain timing below).
+      threadStart: number; threadEnd: number;
     };
     const buildStage = (slug: string): BuiltStage | null => {
       const found = stageBoxOf(slug);
@@ -756,6 +762,8 @@ export function initSiteThread() {
         x: box.left + (pt[0] / plan.vbW) * (box.right - box.left),
         y: box.top + (pt[1] / plan.vbH) * (box.bottom - box.top),
       });
+      const artStart = artBox.top - 0.8 * winHeight;
+      const artEnd = Math.max(artStart + 1, artBox.bottom - 0.45 * winHeight);
       return {
         slug, plan, paths,
         dot: stage.querySelector<SVGCircleElement>(`svg[data-variant="${stageVariant}"] .project-thread-dot--end`),
@@ -763,8 +771,10 @@ export function initSiteThread() {
         exit: mapPoint(plan.exit),
         entryDir: isMobile ? "S" : "E",
         exitDir: isMobile ? "S" : "E",
-        artStart: artBox.top - 0.8 * winHeight,
-        artEnd: Math.max(artBox.top - 0.8 * winHeight + 1, artBox.bottom - 0.45 * winHeight),
+        artStart,
+        artEnd,
+        threadStart: artStart,
+        threadEnd: artEnd,
       };
     };
     const e2eeStage = buildStage("fb-messenger-e2ee");
@@ -1009,34 +1019,64 @@ export function initSiteThread() {
     // Round 12: the project chain tiles [chainStart, chainEnd] gaplessly.
     // C0 runs the gutter while the Projects header scrolls by, each
     // stage's paths tile its article's trigger window (so the thread and
-    // the DOM choreography share one progress value), the inter-stage
-    // connectors tile the gaps between articles, and C3 lands on
-    // skillsTop where site-4 takes over.
+    // the DOM choreography share one progress value - the E2EE stage
+    // exactly, Sheet/Piano on a span shortened only by their capped
+    // entry delay, see below), the inter-stage connectors tile the
+    // gaps between articles, and C3 lands on skillsTop where site-4
+    // takes over.
     // Round 12.1 (Bug 2): the article trigger windows overlap (the
     // 128px inter-article gap is smaller than 0.35*winH), so the
     // connector windows [prev.artEnd, next.artStart] inverted and the
-    // connectors popped 0 to 1 in 1px of scroll. Each stage's artEnd is
-    // clamped to at most the next stage's artStart minus a minimum
-    // connector draw span, so every connector gets a real scroll span.
-    // The stage thread completes earlier than its DOM choreography (the
-    // stages still START in sync, which is what entry continuity needs).
-    const MIN_CONNECTOR_SPAN = 200;
+    // connectors popped 0 to 1 in 1px of scroll.
+    // Round 12.2 (spec 378): the Bug 2a fix funded the connector span
+    // by clamping each stage's artEnd, which compressed every stage
+    // thread window into a shorter span - the thread ran ahead of the
+    // DOM choreography (E2EE through-path 0.77 drawn at DOM p 0.35,
+    // where its [0.44, 0.8] window says 0; Sheet front[1] already 1
+    // at DOM p 0.45, where the test needs it mid-draw). The clamp is
+    // gone: stage paths tile the FULL article trigger window again, so
+    // thread and DOM share one progress value as designed. The
+    // connector span is funded the other way instead: the NEXT stage's
+    // thread starts late (its windows re-map onto
+    // [artStart + delay, artEnd]), and the connector draws in
+    // [prev last-path end, next.threadStart]. No two chain segments
+    // overlap in scroll, so the filament stays continuous and the head
+    // dot never jumps. The delay is capped (15% of the Sheet span, 10%
+    // of the Piano span) so the mid-scrub assertions keep margin
+    // (Sheet front[1] needs thread_p(0.45) > 0.32, Piano drawn needs
+    // thread_p(0.15) > 0). The stage end dots still fade on the full
+    // span: a delayed last path completes at most
+    // (1 - dotEnd) * delay / span after dotEnd, inside the 0.05 fade.
+    const MIN_CONNECTOR_SPAN = 60;
     let chainSegments: Segment[] = [];
     let chainEnd = sProjEnd;
     if (chain) {
-      if (chain.stages[0] && chain.stages[1]) {
-        chain.stages[0].artEnd = Math.max(chain.stages[0].artStart + 1, Math.min(chain.stages[0].artEnd, chain.stages[1].artStart - MIN_CONNECTOR_SPAN));
-      }
-      if (chain.stages[1] && chain.stages[2]) {
-        chain.stages[1].artEnd = Math.max(chain.stages[1].artStart + 1, Math.min(chain.stages[1].artEnd, chain.stages[2].artStart - MIN_CONNECTOR_SPAN));
-      }
+      const [e2ee, sheet, piano] = chain.stages as [BuiltStage, BuiltStage, BuiltStage];
+      // A stage's last path ends at dotEnd of its thread span (the last
+      // p-window's end equals dotEnd in every plan).
+      const exitEnd = (stage: BuiltStage) =>
+        stage.threadStart + stage.plan.dotEnd * (stage.threadEnd - stage.threadStart);
+      // C1: delay the Sheet thread just enough for a real C1 span.
+      const slack1 = sheet.artStart - exitEnd(e2ee);
+      const delaySheet = Math.min(
+        Math.max(0, MIN_CONNECTOR_SPAN - slack1),
+        0.15 * (sheet.artEnd - sheet.artStart),
+      );
+      sheet.threadStart = sheet.artStart + delaySheet;
+      // C2: same, against the Sheet exit end on its delayed span.
+      const slack2 = piano.artStart - exitEnd(sheet);
+      const delayPiano = Math.min(
+        Math.max(0, MIN_CONNECTOR_SPAN - slack2),
+        0.1 * (piano.artEnd - piano.artStart),
+      );
+      piano.threadStart = piano.artStart + delayPiano;
       const chainStart = Math.max(sProjEnd, Math.min(s4, chain.stages[0]!.artStart - 1));
       setTiming(siteSegments[2]!, sExp, sProjStart);
       setTiming(siteSegments[3]!, chainStart, chain.stages[0]!.artStart);
       const mkStageSegs = (stage: BuiltStage): Segment[] =>
         stage.paths.map((element, i) => {
           const w = stage.plan.windows[i]!;
-          const span = stage.artEnd - stage.artStart;
+          const span = stage.threadEnd - stage.threadStart;
           const seg: Segment = {
             element,
             drawLength: element.getTotalLength(),
@@ -1049,7 +1089,7 @@ export function initSiteThread() {
             setDash: dashSetter(element),
             occluded: stage.plan.order[i]![0] === "back",
           };
-          setTiming(seg, stage.artStart + w[0] * span, stage.artStart + w[1] * span);
+          setTiming(seg, stage.threadStart + w[0] * span, stage.threadStart + w[1] * span);
           return seg;
         });
       const mkConnectorSeg = (element: SVGPathElement, start: number, end: number): Segment => {
@@ -1069,8 +1109,8 @@ export function initSiteThread() {
       const e2eeSegs = mkStageSegs(chain.stages[0]!);
       const sheetSegs = mkStageSegs(chain.stages[1]!);
       const pianoSegs = mkStageSegs(chain.stages[2]!);
-      const c1Seg = mkConnectorSeg(connectorEls[0]!, chain.stages[0]!.artEnd, chain.stages[1]!.artStart);
-      const c2Seg = mkConnectorSeg(connectorEls[1]!, chain.stages[1]!.artEnd, chain.stages[2]!.artStart);
+      const c1Seg = mkConnectorSeg(connectorEls[0]!, e2eeSegs.at(-1)!.endScroll, chain.stages[1]!.threadStart);
+      const c2Seg = mkConnectorSeg(connectorEls[1]!, sheetSegs.at(-1)!.endScroll, chain.stages[2]!.threadStart);
       // Round 12.1 (Bug 4): C3 starts when the Piano belt visually
       // completes (its last path ends at dotEnd 0.85 of the art window),
       // not at artEnd - between belt completion and artEnd the user saw
