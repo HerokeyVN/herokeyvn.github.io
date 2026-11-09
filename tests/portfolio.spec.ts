@@ -3178,3 +3178,43 @@ test("bug 8: headline glyph contours draw progressively and the head dot rides t
   expect(dotCapture!.dist, "head dot distance from the contour leading edge at 1920x925").toBeLessThanOrEqual(6);
 });
 
+test("bug 8: Experience headline fits on mobile", async ({ page }) => {
+  // Guards the mobile shrink (Key 2026-11-09): at 390px the whole
+  // outlined line fits on one line inside the viewport.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll<SVGPathElement>("[data-site-thread-segment]")].reduce(
+      (t, p) => t + p.getTotalLength(),
+      0,
+    ) > 1000,
+  );
+  await page.evaluate(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    document.querySelector("#experience-title")!.scrollIntoView({ block: "center" });
+  });
+  await page.waitForTimeout(2500);
+  const mobile = await page.evaluate(() => {
+    const title = document.querySelector<HTMLElement>("#experience-title")!;
+    const em = title.querySelector("em")!;
+    const glyphs = [...title.querySelectorAll<HTMLElement>(".heading__glyph")];
+    const rects = glyphs.map((g) => g.getBoundingClientRect());
+    const meetsTop = rects[0]!.top;
+    const infraTop = rects[5]!.top;
+    return {
+      fontSize: Number.parseFloat(getComputedStyle(title).fontSize),
+      titleRight: title.getBoundingClientRect().right,
+      emRight: em.getBoundingClientRect().right,
+      maxGlyphRight: Math.max(...rects.map((r) => r.right)),
+      minGlyphLeft: Math.min(...rects.map((r) => r.left)),
+      lineTopDiff: Math.abs(meetsTop - infraTop),
+    };
+  });
+  expect(mobile.fontSize, "Experience title font size at 390px").toBeLessThanOrEqual(24);
+  expect(mobile.titleRight, "Experience title right edge at 390px").toBeLessThanOrEqual(391);
+  expect(mobile.emRight, "Experience outlined line right edge at 390px").toBeLessThanOrEqual(391);
+  expect(mobile.maxGlyphRight, "rightmost Experience glyph at 390px").toBeLessThanOrEqual(391);
+  expect(mobile.minGlyphLeft, "leftmost Experience glyph at 390px").toBeGreaterThanOrEqual(-1);
+  expect(mobile.lineTopDiff, "MEETS and INFRASTRUCTURE. share one line at 390px").toBeLessThanOrEqual(4);
+});

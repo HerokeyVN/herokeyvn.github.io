@@ -254,4 +254,24 @@ import SectionHeading from "./SectionHeading.astro";
       grid-template-columns: 1fr;
     }
   }
+
+  /* Mobile shrink (Key 2026-11-09: "Thu nhỏ headline trên mobile cho
+     vừa màn hình"): the outlined line "MEETS INFRASTRUCTURE." is
+     14.05em wide (advances from the Syne 700 font: MEETS 4053 + space
+     241 + INFRASTRUCTURE. 11058, minus 20 gaps of -0.065em
+     letter-spacing) and "INFRASTRUCTURE." alone is 10.15em. At the
+     3.4rem clamp floor that needs 764px / 552px, far past the ~322px
+     available at 390px (390 - 2x18px gutter - 32px heading
+     padding-right), so the tail traced off-screen. A vw-sized title
+     keeps the whole outlined line on one line: at 390px it renders
+     21.45px and the line is 301px; at 320px it is 17.6px and the line
+     is 247px against 252px available. Scoped to #experience-title so
+     the other headlines keep their size. The trace measures live
+     layout (fontSize, docBox, rebuild on resize), so the contours
+     rescale with the smaller font and no geometry is cached. */
+  @media (max-width: 700px) {
+    :global(#experience-title.section-heading__title) {
+      font-size: clamp(1rem, 5.5vw, 1.375rem);
+    }
+  }
 </style>
