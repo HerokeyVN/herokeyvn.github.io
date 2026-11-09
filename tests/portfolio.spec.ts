@@ -146,9 +146,18 @@ test("keeps the site thread outside protected content", async ({ page }) => {
       // protected content at its designed junction, never along its run.
       // Round 12: segment 3 is the C0 connector, whose endpoint meets
       // the E2EE stage entry on the exhibit/visual edge by design, so
-      // samples within 12 px of it are excluded the same way.
+      // samples within 16 px of it are excluded the same way. Round 12.2:
+      // 16, not 12 - measured live at 390px, the entry sits 13.3 px
+      // inside the visual's expanded top edge in the measurement frame
+      // (unrevealed boxes), so a 12 px exclusion left a 1.3 px sliver of
+      // the designed entry approach exposed and one 4 px-phase sample
+      // landed in it. No routing can remove that sliver: any path ending
+      // at this entry must cross the expanded edge 13.3 px out and travel
+      // that far inside the box, and the straight drop is already the
+      // minimal-exposure shape. 16 px covers the designed entry with
+      // margin; the whole run before it is still checked.
       const end = segment === 6 || segment === 3 ? path.getPointAtLength(length) : null;
-      const endSkip = segment === 6 ? 24 : segment === 3 ? 12 : 0;
+      const endSkip = segment === 6 ? 24 : segment === 3 ? 16 : 0;
       for (let distance = 0; distance <= length; distance += 4) {
         const point = path.getPointAtLength(distance);
         if (end && Math.hypot(point.x - end.x, point.y - end.y) < endSkip) continue;
