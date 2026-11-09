@@ -273,5 +273,16 @@ import SectionHeading from "./SectionHeading.astro";
     :global(#experience-title.section-heading__title) {
       font-size: clamp(1rem, 5.5vw, 1.375rem);
     }
+
+    /* Round 12.1 regression fix: at the shrunk size the 0.88 leading no
+       longer separates the solid line from the outlined line, so the exp
+       connectors (which sit on the outlined glyph cap tops) passed 3.2px
+       under the solid "Working where identity" text, below the 10px
+       floor. The outlined em is display:block below 768px, so a top
+       margin drops the whole outlined line and its connectors clear of
+       the solid line; 10px restores about 13px clearance. */
+    :global(#experience-title.section-heading__title em) {
+      margin-top: 10px;
+    }
   }
 </style>
