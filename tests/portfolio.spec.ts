@@ -2852,24 +2852,33 @@ test("round 12.1: headline traces complete while framed, connectors paint, key-1
       contourAttr: "data-exp-glyph-key", contourDataset: "expGlyphKey",
       contourCountAttr: "data-exp-glyph-contour",
       spans: 20, contours: 24,
+      // Round 12 design: 3 VISIBLE inter-letter connectors
+      // (EXP_GLYPH_TRANSITIONS, visibility "visible"); the round-12
+      // test asserts expConnectorCount 3.
+      connectors: 3,
     },
     {
       id: "proj", heading: "#projects-title", keyPrefix: "proj-",
       contourAttr: "data-proj-glyph-key", contourDataset: "projGlyphKey",
       contourCountAttr: "data-proj-glyph-contour",
       spans: 9, contours: 12,
+      // Round 12.1: no visible transitions defined for the three new
+      // headlines, so no connector element is created for them.
+      connectors: 0,
     },
     {
       id: "skills", heading: "#skills-title", keyPrefix: "skills-",
       contourAttr: "data-skills-glyph-key", contourDataset: "skillsGlyphKey",
       contourCountAttr: "data-skills-glyph-contour",
       spans: 15, contours: 16,
+      connectors: 0,
     },
     {
       id: "contact", heading: "#contact-title", keyPrefix: "contact-",
       contourAttr: "data-contact-glyph-key", contourDataset: "contactGlyphKey",
       contourCountAttr: "data-contact-glyph-contour",
       spans: 17, contours: 24,
+      connectors: 0,
     },
   ];
 
@@ -3022,7 +3031,17 @@ test("round 12.1: headline traces complete while framed, connectors paint, key-1
 
     for (const h of headlines) {
       // Counts, alignment (same method as the round-12 exp check, scoped
-      // to this heading), and zero visible inter-letter connectors.
+      // to this heading), and the designed number of VISIBLE inter-letter
+      // connectors. The old count measured DOM presence, which conflated
+      // exp's 3 designed visible connectors with the new headlines'
+      // (nonexistent) ones. A connector counts as visible only when it
+      // is actually painted: computed visibility visible, displayed, and
+      // a dash that paints something (a partial draw, or "none" = fully
+      // drawn). An unstarted connector reads visibility:hidden with dash
+      // "0, ..." and is not counted. Verified live 2026-11-09: at the
+      // measurement point (scrollY 7200, after the sweep) the 3 exp
+      // connectors read visibility:visible with dash "none", while
+      // proj/skills/contact create no connector elements at all.
       const geom = await page.evaluate((hh) => {
         const errors: number[] = [];
         [...document.querySelectorAll<SVGPathElement>(`[${hh.contourCountAttr}]`)].forEach((path) => {
@@ -3047,14 +3066,18 @@ test("round 12.1: headline traces complete while framed, connectors paint, key-1
           maxAlignError: Math.max(...errors),
           contourCount: document.querySelectorAll(`[${hh.contourCountAttr}]`).length,
           spanCount: document.querySelectorAll(`${hh.heading} .heading__glyph`).length,
-          connectorCount: document.querySelectorAll(
+          connectorCount: [...document.querySelectorAll<SVGPathElement>(
             `[data-glyph-connector][data-from-glyph^='${hh.keyPrefix}']`,
-          ).length,
+          )].filter((el) => {
+            const cs = getComputedStyle(el);
+            const dash = el.style.strokeDasharray;
+            return cs.visibility === "visible" && cs.display !== "none" && dash !== "" && !dash.startsWith("0 ");
+          }).length,
         };
       }, h);
       expect(geom.spanCount, `${h.id} glyph spans at ${vp.width}x${vp.height}`).toBe(h.spans);
       expect(geom.contourCount, `${h.id} contours at ${vp.width}x${vp.height}`).toBe(h.contours);
-      expect(geom.connectorCount, `${h.id} visible connectors at ${vp.width}x${vp.height}`).toBe(0);
+      expect(geom.connectorCount, `${h.id} visible connectors at ${vp.width}x${vp.height}`).toBe(h.connectors);
       expect(geom.maxAlignError, `${h.id} alignment error at ${vp.width}x${vp.height}`).toBeLessThan(0.001);
 
       // Bugs 1, 5-7: the trace must complete while the headline is
