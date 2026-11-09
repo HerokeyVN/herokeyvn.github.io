@@ -478,7 +478,11 @@ export function initSiteThread() {
     const turnR = Math.min(100, Math.max(12, rightEdge - first.x - 8));
     const turnY = isMobile ? endY + 0.74 * (runY - endY) : runY - turnR;
     const gutterTopY = Math.min(turnY, Math.max(endY + 60, filledTop - 40));
-    const connL1 = (isMobile ? 1.1 : 0.5) * connDx;
+    // Round 12.2 spec-105: the mobile cubic's control handle is shortened
+    // (1.1 -> 0.85) so the curve swings right of the About kicker's
+    // top-right corner, which it grazed by ~2px in the shifted
+    // (unrevealed) frame. Start tangent unchanged, so G1 holds.
+    const connL1 = (isMobile ? 0.85 : 0.5) * connDx;
     const connCp1x = endX + handoffDir.x * connL1;
     const connCp1y = endY + handoffDir.y * connL1;
     const connCp2x = rightEdge;
@@ -802,7 +806,10 @@ export function initSiteThread() {
     ) => {
       const { entry, entryDir } = stage;
       if (mode === "gap" && entryDir === "E") {
-        const rE = Math.max(6, Math.min(48, gapWest - 6, rTurn));
+        // Round 12.2 spec-105: descend at the centre of the inter-column
+        // gap, clear of both the content column's right margin and the
+        // stage's left margin (the old rE sat at the gap edge).
+        const rE = Math.max(8, Math.min(48, gapWest / 2, rTurn));
         route.lineTo(entry.x, midGap);
         route.turn("S", rE);
         route.lineTo(entry.x - rE, entry.y - rE);
@@ -810,8 +817,29 @@ export function initSiteThread() {
         route.lineTo(entry.x, entry.y);
         return;
       }
-      route.lineTo(edge + rTurn, midGap);
-      route.turn("S", rTurn);
+      // Mobile top entry (round 12.2 spec-105): the two turns use
+      // decoupled radii plus a straight south drop into the entry. The
+      // entry sits only ~7px below the visual's shifted (unrevealed)
+      // top edge, so the margin band above it is ~13px deep against a
+      // 12px endpoint exclusion: the east run sits above the band, the
+      // final turn ends above it too, and the only band crossing is the
+      // straight drop, whose exposed part past the exclusion is ~1px.
+      // The south turn into the gap is capped so it never overshoots
+      // the gutter point the decoupled shape needs.
+      let rTurnEff = rTurn;
+      let r1 = 0;
+      // r2 = 9, not 8: the test measures a cubic's radius analytically
+      // (1/maxCurvature) and a nominal r=8 quarter-turn measures 7.94,
+      // below its >= 8 connector floor; r=9 measures ~8.9.
+      const r2 = 9, drop = 16;
+      let y0 = 0;
+      if (entryDir !== "E") {
+        r1 = Math.min(16, Math.max(6, (entry.x - edge) / 3), Math.max(6, entry.y - midGap - r2 - drop - 6));
+        y0 = entry.y - r1 - r2 - drop;
+        rTurnEff = Math.min(rTurn, Math.max(6, y0 - midGap));
+      }
+      route.lineTo(edge + rTurnEff, midGap);
+      route.turn("S", rTurnEff);
       if (entryDir === "E") {
         const rD = Math.min(60, Math.max(4, entry.x - edge));
         route.lineTo(edge, entry.y - rD);
@@ -820,26 +848,47 @@ export function initSiteThread() {
       } else {
         // Mobile top entry: gutter -> east along the top margin -> south
         // into the entry point on the stage's top edge.
-        const rr = Math.min(16, Math.max(6, (entry.x - edge) / 3));
-        route.lineTo(edge, entry.y - 2 * rr);
-        route.turn("E", rr);
-        route.lineTo(entry.x - rr, entry.y - rr);
-        route.turn("S", rr);
+        route.lineTo(edge, y0);
+        route.turn("E", r1);
+        route.lineTo(entry.x - r2, entry.y - r2 - drop);
+        route.turn("S", r2);
         route.lineTo(entry.x, entry.y);
       }
     };
     // Jog from a south-heading stage exit (mobile bottom corridors) to a
-    // south run down the right gutter: east below the stage, then south.
-    // The jog stays above the article's content column (gap 2.5rem on
-    // single-column layouts), so both radii are capped at half that gap.
+    // south run down the right gutter: straight south out of the stage,
+    // then east below it, then south. The straight run matters: at load
+    // the article still carries its unplayed reveal translate (+22px),
+    // so the test measures the visual box 22px below the final position
+    // the thread was built against, and the exit sits only ~3px above
+    // that shifted box's bottom edge. A turn straight out of the exit
+    // would spend ~16px of arc inside the shifted box past the 12px
+    // endpoint exclusion; the straight run exits it within ~10px, so
+    // every point of it is excluded, and both turns then sit in the gap
+    // between the shifted visual bottom and the final content top.
+    // (Round 12.2 spec-105: the old turn-first jog grazed the shifted
+    // visual's bottom margin by ~1px on all three mobile exits.)
+    // rJ = 9, not 8: the geometry test measures a cubic's radius
+    // analytically and a nominal r=8 turn measures 7.94, below its
+    // >= 8 connector floor; r=9 measures ~8.9.
     const exitJogSouth = (route: ReturnType<typeof makeRoute>, stage: BuiltStage) => {
+      const visualEl = document.querySelector(`[data-project-slug="${stage.slug}"]`)?.closest(".project-exhibit__visual");
+      const visRect = visualEl ? visualEl.getBoundingClientRect() : undefined;
+      const visRectBottom = visRect ? visRect.bottom + scrollY : stage.exit.y + 40;
       const content = contentBoxOf(stage.slug);
       const contentTop = content ? content.top : stage.exit.y + 40;
-      const rJ = Math.min(24, Math.max(8, (contentTop - stage.exit.y) / 2 - 4));
+      const rJ = 9;
+      let run = visRectBottom + 6 - stage.exit.y + 0.7;
+      run = Math.min(11.5, Math.max(9.5, run));
+      // Keep the east run above the content column's final top edge; the
+      // straight run's lower bound (9.5px) already clears the shifted
+      // visual, so only shrink it if the gap is too small to hold both.
+      run = Math.min(run, Math.max(9.5, contentTop - 1 - stage.exit.y - rJ));
+      route.lineTo(stage.exit.x, stage.exit.y + run);
       route.turn("E", rJ);
-      route.lineTo(rightEdge - rJ, stage.exit.y + rJ);
+      route.lineTo(rightEdge - rJ, stage.exit.y + run + rJ);
       route.turn("S", rJ);
-      // The turn already ends at (rightEdge, exit.y + 2*rJ) heading south.
+      // The turns end at (rightEdge, exit.y + run + 2*rJ) heading south.
     };
 
     let chain: { c0d: string; c1d: string; c2d: string; c3d: string; stages: BuiltStage[] } | null = null;
@@ -863,11 +912,17 @@ export function initSiteThread() {
         c0.turn("E", r0);
         c0.lineTo(e2eeStage.entry.x, e2eeStage.entry.y);
       } else {
-        const rr = Math.min(16, Math.max(6, (e2eeStage.entry.x - edge) / 3), Math.max(6, (e2eeStage.entry.y - projStart.y - 8) / 2));
-        c0.lineTo(edge, e2eeStage.entry.y - 2 * rr);
-        c0.turn("E", rr);
-        c0.lineTo(e2eeStage.entry.x - rr, e2eeStage.entry.y - rr);
-        c0.turn("S", rr);
+        // Mobile top entry (round 12.2 spec-105): decoupled radii plus a
+        // straight south drop into the entry - see approachEntry. The old
+        // single-radius shape dipped its final turn ~1px into the
+        // visual's shifted top margin. r2 = 11, not 8: site-3's radius
+        // floor is 10 and a nominal r=8 turn measures 7.94 analytically.
+        const r1 = Math.min(16, Math.max(6, (e2eeStage.entry.x - edge) / 3), Math.max(6, e2eeStage.entry.y - projStart.y - 11 - 16 - 4));
+        const r2 = 11, drop = 16;
+        c0.lineTo(edge, e2eeStage.entry.y - r1 - r2 - drop);
+        c0.turn("E", r1);
+        c0.lineTo(e2eeStage.entry.x - r2, e2eeStage.entry.y - r2 - drop);
+        c0.turn("S", r2);
         c0.lineTo(e2eeStage.entry.x, e2eeStage.entry.y);
       }
 
@@ -902,8 +957,16 @@ export function initSiteThread() {
         c2.lineTo(rightEdge, g23mid - rG23);
         c2.turn("W", rG23);
       }
-      if (twoCol && pianoContent) {
-        approachEntry(c2, pianoStage, g23mid, "gap", rG23, pianoStage.entry.x - pianoContent.right);
+      // Round 12.2 spec-105: the "gap" approach only fits when the
+      // content column genuinely sits west of the stage entry with a
+      // real gap to descend in. At 1280 the Piano content is EAST of
+      // the stage, so gapWest is negative, the descent radius clamped
+      // to 6 and the south run sat exactly on the visual's left margin
+      // (29 hits). The gutter approach descends at the left edge, clear
+      // of the visual, and turns into the entry exactly like C0.
+      const pianoGapWest = pianoContent ? pianoStage.entry.x - pianoContent.right : -Infinity;
+      if (twoCol && pianoContent && pianoGapWest > 24) {
+        approachEntry(c2, pianoStage, g23mid, "gap", rG23, pianoGapWest);
       } else {
         approachEntry(c2, pianoStage, g23mid, "gutter", rG23);
       }
@@ -913,7 +976,14 @@ export function initSiteThread() {
       const c3 = makeRoute(pianoStage.exit.x, pianoStage.exit.y, pianoStage.exitDir);
       let c3DescentX: number;
       if (pianoStage.exitDir === "E") {
-        const rA = Math.min(60, Math.max(8, rightEdge - pianoStage.exit.x));
+        // Round 12.2 spec-105: cap the descent by the gap to the content
+        // column instead of the right edge - the old rA=60 dropped the
+        // run at x=668, 2px inside the content column's left margin
+        // (25 hits). The gap-centre descent clears both the visual's
+        // right margin and the content's left margin.
+        const rA = twoCol && pianoContent && pianoContent.left > pianoStage.exit.x + 16
+          ? Math.min(60, Math.max(8, (pianoContent.left - pianoStage.exit.x) / 2))
+          : Math.min(60, Math.max(8, rightEdge - pianoStage.exit.x));
         c3.turn("S", rA);
         c3DescentX = pianoStage.exit.x + rA;
       } else {
