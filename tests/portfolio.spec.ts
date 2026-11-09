@@ -592,6 +592,11 @@ test("project motif threads enter and exit at the stage edges, land on their tar
   // desktop + mobile); tightest measured values are E2EE mobile NOISE 10.3px,
   // Sheet Store desktop first stat row 8.2px, Piano mobile front-tier exit
   // 10.9px below the tier (39px desktop) and mobile FIG label 9.2px.
+  // Key 14: since the Round 12.1 Bug 3 fillet fix the descent ends in a
+  // quarter-turn (r=26) whose exit sits 26 viewBox units east of the key
+  // centre, so "lands on key 14" is asserted as endpoint-inside-key-box
+  // plus a descent/exit crossing of the box - not endpoint-to-centre
+  // distance (the old <= 2px check measured the fillet radius, 21.9px).
   // Deliberate exceptions (NOT asserted): the E2EE thread crosses the
   // background HELLO letters (the word is the protected message); the Sheet
   // Store back thread runs behind the opaque detail panel to the first
@@ -672,12 +677,35 @@ test("project motif threads enter and exit at the stage edges, land on their tar
         const m0 = melody.getPointAtLength(0);
         const ms = new DOMPoint(m0.x, m0.y).matrixTransform(melody.getScreenCTM()!);
         out["sheet:melodyStart"] = Math.round(dist(ms, center(nb)) * 10) / 10;
-        // Descent (second-to-last front path) ends on key 14.
+        // Descent (second-to-last front path) + exit pass through key 14.
+        // Since the Round 12.1 Bug 3 fillet fix, "ends on" means the
+        // thread passes through the key box, not that the descent
+        // endpoint is the key centre: the descent ends in a quarter-turn
+        // fillet (r=26 viewBox units) whose exit point (1373,522) sits
+        // 26 units east of the centre (1347,522), i.e. ~21.9 screen px
+        // at desktop scale (live probe 1280x720: dx 21.9, dy -0.9,
+        // endpoint inside the box with 9.3px east-edge margin, 25
+        // descent + 12 exit samples inside the box). The endpoint must
+        // lie inside the key box, and descent+exit samples must cross
+        // the box (in through the top edge, out through the east edge).
+        // The old endpoint-to-centre <= 2px assertion measured the
+        // fillet radius, not a defect.
         const descent = frontPaths[frontPaths.length - 2]!;
+        const exit = frontPaths[frontPaths.length - 1]!;
         const dEnd = descent.getPointAtLength(descent.getTotalLength());
         const de = new DOMPoint(dEnd.x, dEnd.y).matrixTransform(descent.getScreenCTM()!);
         const key14 = stage.querySelector('[data-key="14"]')!.getBoundingClientRect();
-        out["sheet:key14"] = Math.round(dist(de, center(key14)) * 10) / 10;
+        const inBox = (p: { x: number; y: number }) => p.x >= key14.left && p.x <= key14.right && p.y >= key14.top && p.y <= key14.bottom;
+        out["sheet:key14"] = inBox(de);
+        out["sheet:key14Cross"] = [descent, exit].some((path) => {
+          const len = path.getTotalLength();
+          for (let d = 0; d <= len; d += 2) {
+            const pt = path.getPointAtLength(d);
+            const sp = new DOMPoint(pt.x, pt.y).matrixTransform(path.getScreenCTM()!);
+            if (inBox({ x: sp.x, y: sp.y })) return true;
+          }
+          return false;
+        });
       }
       if (slug === "sky-auto-piano") {
         out["piano:topTier"] = Math.round(minDistToBoxes(pts, boxes(stage, ".piano-tier--0 .piano-key")) * 10) / 10;
@@ -716,7 +744,8 @@ test("project motif threads enter and exit at the stage edges, land on their tar
   expect(result["sheet:labels"] as number).toBeGreaterThanOrEqual(6);
   expect(result["sheet:stats1"] as number).toBeGreaterThanOrEqual(6);
   expect(result["sheet:melodyStart"] as number).toBeLessThanOrEqual(2);
-  expect(result["sheet:key14"] as number).toBeLessThanOrEqual(2);
+  expect(result["sheet:key14"]).toBe(true);
+  expect(result["sheet:key14Cross"]).toBe(true);
   expect(result["piano:topTier"] as number).toBeGreaterThanOrEqual(10);
   // Front tier: the belt's exit emerges from behind the front tier, so the
   // closest front-thread approach is the exit line ~11px below the tier on
