@@ -3133,8 +3133,15 @@ test("bug 8: headline glyph contours draw progressively and the head dot rides t
     document.documentElement.style.scrollBehavior = "auto";
   });
 
+  // The sweep anchors on the SECTION top, not the title: the trace
+  // window anchors on chain.headingTop = expTop (the section top, see
+  // site-thread.ts), which sits ~197px above the title at 1920x925.
+  // The title-anchored start missed the M slice entirely (the M contour
+  // completes ~163px before the title-anchored y0; verified live
+  // 2026-11-09: M draws over scrollY 2116-2146, 27 partial states at
+  // 1px steps, fractions 0.083-0.937, head dot visible mid-draw).
   const headingTop = await page.evaluate(
-    () => document.querySelector<HTMLElement>("#experience-title")!.getBoundingClientRect().top + scrollY,
+    () => document.querySelector<HTMLElement>("#experience")!.getBoundingClientRect().top + scrollY,
   );
   const y0 = Math.max(0, Math.floor(headingTop - 925 * 0.55));
   let partialCount = 0;
